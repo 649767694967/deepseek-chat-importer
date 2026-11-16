@@ -7,19 +7,36 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = process.argv[2] || path.resolve(here, '..');
 const buildDir = fs.existsSync(path.join(here, 'template.html')) ? here : path.join(root, '_build');
-const template = fs.readFileSync(path.join(buildDir, 'template.html'), 'utf8');
+const isRepoLayout = path.basename(here) === 'src';
 
 /**
- * 内联顺序决定作用域共享方式。
+ * 构建目标。each 目标 = 一个模板 + 一组内联模块 + 输出文件名。
  * - 直接内联：顶层声明进入同一个 <script> 作用域
  * - wrap：包进 IIFE，只把导出的名字挂到指定全局对象上，避免与其它模块撞名
+ * - slots：自定义占位标记（默认 <!--INLINE:file-->）
  */
-const modules = [
-  { file: 'device.js', wrap: null, slot: '/*__INLINE_DEVICE__*/' },
-  { file: 'zipkit.js', wrap: null },
-  { file: 'core.mjs', wrap: null },
-  { file: 'dsh_session_writer.js', wrap: 'DshWriter' },
-  { file: 'app.js', wrap: null },
+const targets = [
+  {
+    name: 'import-tool',
+    template: 'template.html',
+    outName: isRepoLayout ? 'index.html' : 'deepseek-import.html',
+    modules: [
+      { file: 'device.js', slots: ['/*__INLINE_DEVICE__*/'] },
+      { file: 'zipkit.js' },
+      { file: 'core.mjs' },
+      { file: 'dsh_session_writer.js', wrap: 'DshWriter' },
+      { file: 'app.js' },
+    ],
+  },
+  {
+    name: 'chat',
+    template: 'chat.template.html',
+    outName: 'chat.html',
+    modules: [
+      { file: 'device.js', slots: ['/*__INLINE_DEVICE__*/'] },
+      { file: 'chat.js' },
+    ],
+  },
 ];
 
 function stripModuleSyntax(name, code) {
@@ -45,32 +62,49 @@ function exportNames(code) {
   return [...names];
 }
 
-let html = template;
-for (const mod of modules) {
-  const candidates = [path.join(root, mod.file), path.join(buildDir, mod.file)];
-  const file = candidates.find((p) => fs.existsSync(p));
-  const marker = mod.slot || `<!--INLINE:${mod.file}-->`;
-  if (!file) {
-    html = html.replace(marker, `/* [missing] ${mod.file} —— 该模块尚未生成 */`);
-    console.log('missing:', mod.file);
-    continue;
+function buildTarget(target) {
+  const templateFile = path.join(buildDir, target.template);
+  if (!fs.existsSync(templateFile)) {
+    throw new Error(`找不到模板 ${templateFile}`);
   }
-  const src = fs.readFileSync(file, 'utf8');
-  const names = exportNames(src);
-  const code = stripModuleSyntax(mod.file, src);
-  let block;
-  if (mod.wrap) {
-    const returned = names.map((n) => `${n}: typeof ${n} !== 'undefined' ? ${n} : undefined`).join(', ');
-    block = `/* ===== ${mod.file}（隔离作用域） ===== */\nconst ${mod.wrap} = (function () {\n${code}\nreturn { ${returned} };\n})();`;
-  } else {
-    block = `/* ===== ${mod.file} ===== */\n${code}`;
+  let html = fs.readFileSync(templateFile, 'utf8');
+
+  for (const mod of target.modules) {
+    const candidates = [path.join(root, mod.file), path.join(buildDir, mod.file)];
+    const file = candidates.find((p) => fs.existsSync(p));
+    const markers = mod.slots || [`<!--INLINE:${mod.file}-->`];
+    if (!file) {
+      for (const marker of markers) html = html.replace(marker, `/* [missing] ${mod.file} —— 该模块尚未生成 */`);
+      console.log(`  missing: ${mod.file}`);
+      continue;
+    }
+    const src = fs.readFileSync(file, 'utf8');
+    const names = exportNames(src);
+    const code = stripModuleSyntax(mod.file, src);
+    let block;
+    if (mod.wrap) {
+      const returned = names.map((n) => `${n}: typeof ${n} !== 'undefined' ? ${n} : undefined`).join(', ');
+      block = `/* ===== ${mod.file}（隔离作用域） ===== */\nconst ${mod.wrap} = (function () {\n${code}\nreturn { ${returned} };\n})();`;
+    } else {
+      block = `/* ===== ${mod.file} ===== */\n${code}`;
+    }
+    let replaced = false;
+    for (const marker of markers) {
+      if (html.includes(marker)) {
+        html = html.replace(marker, block);
+        replaced = true;
+      }
+    }
+    console.log(`  inlined: ${mod.file} (${code.length} bytes${mod.wrap ? ', wrapped as ' + mod.wrap : ''})${replaced ? '' : ' [未被模板引用]'}`);
   }
-  html = html.replace(marker, block);
-  console.log(`inlined: ${mod.file} (${code.length} bytes${mod.wrap ? ', wrapped as ' + mod.wrap : ''})`);
+
+  const out = path.join(root, process.env.OUT && target.name === 'import-tool' ? process.env.OUT : target.outName);
+  fs.writeFileSync(out, html, 'utf8');
+  console.log(`→ ${target.name}: ${out} (${html.length} bytes)`);
+  return out;
 }
 
-// 仓库布局（脚本在 src/）输出 index.html；本地布局（脚本在 _build/）输出 deepseek-import.html
-const outName = process.env.OUT || (path.basename(here) === 'src' ? 'index.html' : 'deepseek-import.html');
-const out = path.join(root, outName);
-fs.writeFileSync(out, html, 'utf8');
-console.log('wrote', out, html.length, 'bytes');
+for (const target of targets) {
+  console.log(`[${target.name}]`);
+  buildTarget(target);
+}

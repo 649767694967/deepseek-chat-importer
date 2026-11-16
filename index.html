@@ -88,6 +88,13 @@
     padding: 28px 20px 60px;
   }
   .wrap { max-width: 1080px; margin: 0 auto; }
+  a.nav-link {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; color: var(--fg); text-decoration: none;
+    border: 1px solid var(--line); background: var(--bg2);
+    padding: 8px 14px; border-radius: 10px; transition: .15s;
+  }
+  a.nav-link:hover { border-color: var(--accent); background: #121b2e; }
   header h1 { font-size: clamp(18px, 1.1vw + 14px, 23px); margin: 0 0 6px; letter-spacing: .3px; }
   header p { margin: 0; color: var(--muted); font-size: 13px; }
   .badges { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 22px; }
@@ -316,6 +323,9 @@
       <span class="badge">Chatbox 备份 .cbx（formatVersion 2）</span>
       <span class="badge">DeepSeek Harness session.v4</span>
       <span class="badge">支持 Markdown / JSON</span>
+    </div>
+    <div class="row" style="margin-bottom:18px">
+      <a class="nav-link" href="./chat.html">💬 站内聊天客户端（自填 API / 可换背景）→</a>
     </div>
   </header>
 

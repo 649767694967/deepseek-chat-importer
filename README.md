@@ -4,6 +4,30 @@
 
 > 在线使用：<https://649767694967.github.io/deepseek-chat-importer/>
 > 离线使用：下载仓库里的 [`index.html`](index.html)，双击即可（Chrome / Edge）。
+> 站内还有一个小型聊天客户端：[`chat.html`](chat.html) —— 自填 API 地址与 Key、可换背景，见下方「站内聊天客户端」。
+
+---
+
+## 站内聊天客户端（chat.html）
+
+同一个站点里的第二个页面：一个纯前端聊天客户端（DeepSeek 手机端 / 桌面客户端的轻量版），**不内置任何 API**，地址和 Key 由你自己填。
+
+- **自填 API**：`baseURL`（默认 `https://api.deepseek.com`）、`API Key`、模型名（`deepseek-chat` / `deepseek-reasoner`）。填中转站地址也可以。
+- **流式对话**：边生成边显示；`reasoning_content` 会收进「思考过程」折叠块；可随时「停止」。
+- **会话管理**：多会话、标题自动取首句、本地保存（localStorage），关掉浏览器再打开还在。
+- **换背景**：6 个预设（深海 / 森林 / 日落 / 暖纸 / 纯黑 / 极光）+ 图片 URL + 上传本地图片（自动压到 1600px 内），再配「模糊 / 暗化」两个滑块调整可读性。
+- **移动端优先**：手机档位下输入框 16px（不触发 iOS 缩放）、`visualViewport` 跟随键盘、安全区内边距、抽屉式设置。
+- **隐私**：Key 只存在本机 localStorage（明文），不经过任何服务器；请求只发往你填的地址。设置里有「清除本机数据」。
+
+### 连不上接口？
+
+浏览器直连第三方 LLM API 常被 **CORS** 拦住（官方接口通常不给 `Access-Control-Allow-Origin`）。三种解法：
+
+1. 填一个**支持跨域的中转地址**（很多中转站默认带 CORS 头）；
+2. 自己起一段 **Cloudflare Worker 代理**——设置面板里内置了可直接复制的代码（就是把请求转发到 `api.deepseek.com` 并补上 CORS 头）；
+3. 用本机反向代理（如 `npx local-cors-proxy`），把 baseURL 指向本地。
+
+页面会在请求失败时给出对应提示（401 / 404 / 429 / 5xx / 跨域），而不是白屏。
 
 ---
 
