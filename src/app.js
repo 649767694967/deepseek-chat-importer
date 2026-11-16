@@ -20,36 +20,34 @@ function fmtBytes(n) {
   return (n / 1024 / 1024).toFixed(1) + ' MB';
 }
 
-/* ---------------- 运行环境 ---------------- */
+/* ---------------- 运行环境 / 设备 ---------------- */
 
 const UA = navigator.userAgent || '';
 const IS_IOS = /iPad|iPhone|iPod/.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const IS_ANDROID = /Android/i.test(UA);
-const IS_TOUCH = (() => {
-  try {
-    const coarse = matchMedia('(pointer: coarse)').matches;
-    const noHover = matchMedia('(hover: none)').matches;
-    return (navigator.maxTouchPoints || 0) > 0 && (coarse || noHover);
-  } catch {
-    return false;
-  }
-})();
-// 桌面浏览器（Windows/macOS/Linux）即使带触屏也按桌面处理，避免误关图片附件
-const IS_DESKTOP_OS = /Windows NT|Macintosh|X11|CrOS/i.test(UA) && !IS_IOS && !IS_ANDROID;
-const MOBILE = IS_IOS || IS_ANDROID || (IS_TOUCH && !IS_DESKTOP_OS && Math.min(screen.width, screen.height) <= 820);
+
+// device.js（内联在 <head>，首帧就设置 data-device）是设备判定的唯一真源
+const DEVINFO = window.__DS2CB_DEVICE__ || null;
+const deviceDetect = DEVINFO ? DEVINFO.detect : () => 'desktop';
+const deviceLabel = DEVINFO ? DEVINFO.label : (d) => d;
+
+let DEVICE = deviceDetect();
+const isTouchLikeDevice = () => DEVICE !== 'desktop';
+// 兼容旧调用点：非桌面（手机/平板）都按"触屏设备"处理保存方式
+const MOBILE = () => isTouchLikeDevice();
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 /**
  * 保存/分享产物。
- * - 移动端：优先系统分享（iOS「存储到文件」、Android「保存到设备/发送给 App」）
- * - 桌面端 / 分享不可用：走 <a download>
+ * - 手机/平板：优先系统分享（iOS「存储到文件」、Android「保存到设备/发送给 App」）
+ * - 电脑 / 分享不可用：走 <a download>
  * 返回 'shared' | 'downloaded' | 'cancelled'
  */
 async function saveFile(bytes, filename, mime = 'application/octet-stream') {
   const blob = new Blob([bytes], { type: mime });
 
-  if (MOBILE && typeof File === 'function' && typeof navigator.canShare === 'function') {
+  if (MOBILE() && typeof File === 'function' && typeof navigator.canShare === 'function') {
     try {
       const file = new File([blob], filename, { type: mime });
       if (navigator.canShare({ files: [file] })) {
@@ -77,7 +75,7 @@ async function saveFile(bytes, filename, mime = 'application/octet-stream') {
     document.body.appendChild(a);
     a.click();
     a.remove();
-    if (MOBILE) log(`已发起下载：${filename}（iPhone 会存到「文件 → 下载」，Android 存到「下载」）`, 'ok');
+    if (MOBILE()) log(`已发起下载：${filename}（iPhone 会存到「文件 → 下载」，Android 存到「下载」）`, 'ok');
     return 'downloaded';
   } catch (err) {
     // 极老 iOS 不支持 a.download：退回新标签打开
@@ -453,7 +451,7 @@ async function exportChatbox(sel, opts = {}) {
   setProgress(0.95, '保存中…');
   if (opts.download !== false) await saveFile(bytes, `chatbox-backup-deepseek-${stamp()}.cbx`, 'application/zip');
   say(`已生成 .cbx：${fmtBytes(bytes.length)}`, 'ok');
-  if (MOBILE && bytes.length > 40 * 1024 * 1024) {
+  if (MOBILE() && bytes.length > 40 * 1024 * 1024) {
     say('手机端提示：文件较大，若保存失败可取消勾选「包含图片附件」后重试', 'warn');
   }
   return { bytes, manifest, entries: entries.length, images: imgCount };
@@ -734,53 +732,111 @@ $('go').addEventListener('click', async () => {
   }, 800);
 });
 
-/* ---------------- 移动端适配 ---------------- */
+/* ---------------- 设备档位：手机 / 平板 / 电脑 ---------------- */
 
-if (MOBILE) {
+const SOURCE_HINT_DESKTOP =
+  '支持直接拖入 <code>deepseek_data-*.zip</code>（官方导出），或解压后的整个文件夹（里面有 <code>chat_session_index.json</code> 和 <code>chat_sessions/</code>）；也支持 DeepSeek-Exporter 等扩展导出的 <code>.md</code> 对话记录（可多选/整个文件夹）。';
+const SOURCE_HINT_TOUCH =
+  '在 DeepSeek 网页端点「设置 → 数据管理 → 导出数据」，把下载到的 <code>deepseek_data-*.zip</code> 选进来；也可以选扩展导出的 <code>.md</code>（可多选）。';
+
+let userTouchedImages = false;
+let userTouchedTarget = false;
+let firstApply = true;
+
+function syncTargetUi(name) {
+  document.querySelectorAll('.target').forEach((x) => x.classList.toggle('sel', x.dataset.target === name));
+  const radio = document.querySelector(`input[name=target][value="${name}"]`);
+  if (radio) radio.checked = true;
+  $('dshOpts').hidden = name !== 'dsh';
+}
+
+/** 按设备档位切换布局相关的 DOM 状态（CSS 部分由 data-device 驱动） */
+function applyDevice(device) {
+  DEVICE = device;
+  if (DEVINFO) DEVINFO.current = device;
+  document.documentElement.setAttribute('data-device', device);
+  const touchLike = device !== 'desktop';
+
   const note = $('mobileNote');
-  if (note) note.hidden = false;
+  if (note) note.hidden = !touchLike;
+  const noteTitle = $('noteTitle');
+  if (noteTitle) noteTitle.textContent = device === 'tablet' ? '平板端' : device === 'phone' ? '手机端' : '触屏设备';
 
   const big = $('dropBig');
-  if (big) big.textContent = '点这里选择 .zip / .md 文件';
+  if (big) big.textContent = touchLike ? '点这里选择 .zip / .md 文件' : '把 zip / 文件夹 / .md 拖到这里';
   const sub = $('dropSub');
-  if (sub) sub.innerHTML = '<span style="color:var(--accent2)">点按选择</span>　支持官方导出 zip 与对话 .md';
+  if (sub) {
+    sub.innerHTML = touchLike
+      ? '<span style="color:var(--accent2)">点按选择</span>　支持官方导出 zip 与对话 .md'
+      : '或者 <span style="color:var(--accent2)">点击选择文件</span>　·　也可以选文件夹';
+  }
 
-  // 手机上大区域点击就够了，隐藏重复的按钮与不适用的文件夹入口
+  // 触屏上没有拖拽、也没有文件夹选择，隐藏这些入口
   const pk = $('pickZip');
-  if (pk) pk.style.display = 'none';
+  if (pk) pk.style.display = touchLike ? 'none' : '';
   const pd = $('pickDir');
-  if (pd) pd.style.display = 'none';
+  if (pd) pd.style.display = touchLike ? 'none' : '';
 
-  // 文案换成移动端实际可用的操作
   const sourceHint = document.querySelector('section.card .hint');
-  if (sourceHint) {
-    sourceHint.innerHTML =
-      '在 DeepSeek 网页端点「设置 → 数据管理 → 导出数据」，把下载到的 <code>deepseek_data-*.zip</code> 选进来；也可以选扩展导出的 <code>.md</code>（可多选）。';
-  }
+  if (sourceHint) sourceHint.innerHTML = touchLike ? SOURCE_HINT_TOUCH : SOURCE_HINT_DESKTOP;
 
-  // 手机内存/网速都紧张：默认不带图片，用户需要时再勾
-  const wi = $('wantImages');
-  if (wi) wi.checked = false;
-
-  // 手机上没有 DSH 桌面客户端：标注一下，默认目标切到 Chatbox（它自己有 iOS/Android App）
   const dshTip = document.querySelector('.target[data-target=dsh] .td');
-  if (dshTip) dshTip.textContent = '需在电脑上使用：解压到 %USERPROFILE%\\.dsh\\sessions\\ 后重启 DeepSeek Harness。';
-  const cb = document.querySelector('input[name=target][value=chatbox]');
-  if (cb) {
-    cb.checked = true;
-    document.querySelectorAll('.target').forEach((x) =>
-      x.classList.toggle('sel', x.dataset.target === 'chatbox')
-    );
+  if (dshTip) {
+    dshTip.textContent = touchLike
+      ? '需在电脑上使用：解压到 %USERPROFILE%\\.dsh\\sessions\\ 后重启 DeepSeek Harness。'
+      : '解压到 %USERPROFILE%\\.dsh\\sessions\\ 覆盖同名目录即可，包内附一键安装脚本。';
   }
+
+  // 默认值只在用户没手动改过时套用
+  const wi = $('wantImages');
+  if (wi && !userTouchedImages) wi.checked = device === 'desktop';
+  if (!userTouchedTarget && touchLike) syncTargetUi('chatbox');
 
   log(
-    `已识别为移动端（${IS_IOS ? 'iOS' : IS_ANDROID ? 'Android' : '触屏设备'}）：已默认关闭图片附件；生成后请用系统下载/分享面板保存`,
+    `界面按「${deviceLabel(device)}」布局（${window.innerWidth}×${window.innerHeight}）` +
+      (touchLike ? '：默认关闭图片附件、默认 Chatbox 目标' : ''),
     'dim'
   );
 }
 
+function refreshDevice(reason) {
+  const next = deviceDetect();
+  if (next === DEVICE && !firstApply) return;
+  const changed = next !== DEVICE;
+  applyDevice(next);
+  if (changed && reason) log(`检测到${reason}，已切换到「${deviceLabel(next)}」布局`, 'dim');
+  firstApply = false;
+}
+
+// 用户动过的选项不再被自动覆盖
+$('wantImages').addEventListener('change', () => {
+  userTouchedImages = true;
+});
+document.querySelectorAll('.target').forEach((el) => {
+  el.addEventListener('click', () => {
+    userTouchedTarget = true;
+  });
+});
+
 logEl.textContent = '';
 log('就绪。把一个 deepseek_data-*.zip 拖进上面的区域开始。', 'dim');
+refreshDevice();
+let resizeTimer = null;
+const scheduleRefresh = (reason) => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => refreshDevice(reason), 160);
+};
+window.addEventListener('resize', () => scheduleRefresh('窗口尺寸变化'), { passive: true });
+window.addEventListener('orientationchange', () => scheduleRefresh('屏幕旋转'), { passive: true });
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', () => scheduleRefresh('可视区域变化'), { passive: true });
+}
+try {
+  const mqList = [matchMedia('(pointer: coarse)'), matchMedia('(hover: none)'), matchMedia('(max-width: 600px)')];
+  for (const mq of mqList) {
+    if (mq.addEventListener) mq.addEventListener('change', () => scheduleRefresh('输入方式变化'));
+  }
+} catch {}
 
 /* 供自动化测试/调试使用（不影响正常使用） */
 globalThis.__DS2CB__ = {

@@ -15,6 +15,7 @@ const template = fs.readFileSync(path.join(buildDir, 'template.html'), 'utf8');
  * - wrap：包进 IIFE，只把导出的名字挂到指定全局对象上，避免与其它模块撞名
  */
 const modules = [
+  { file: 'device.js', wrap: null, slot: '/*__INLINE_DEVICE__*/' },
   { file: 'zipkit.js', wrap: null },
   { file: 'core.mjs', wrap: null },
   { file: 'dsh_session_writer.js', wrap: 'DshWriter' },
@@ -48,8 +49,8 @@ let html = template;
 for (const mod of modules) {
   const candidates = [path.join(root, mod.file), path.join(buildDir, mod.file)];
   const file = candidates.find((p) => fs.existsSync(p));
-  const marker = `<!--INLINE:${mod.file}-->`;
-  if (!fs.existsSync(file)) {
+  const marker = mod.slot || `<!--INLINE:${mod.file}-->`;
+  if (!file) {
     html = html.replace(marker, `/* [missing] ${mod.file} —— 该模块尚未生成 */`);
     console.log('missing:', mod.file);
     continue;
