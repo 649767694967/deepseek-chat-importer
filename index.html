@@ -311,6 +311,30 @@
   @media (max-width: 700px) {
     html[data-device="tablet"] .targets { grid-template-columns: 1fr; }
   }
+
+  /* 顶部推广条：引导到网页版聊天 */
+  a.promo {
+    display: flex; align-items: center; gap: 12px;
+    margin: 0 0 20px; padding: 13px 16px;
+    border: 1px solid #2b3a55; border-radius: 14px;
+    background: linear-gradient(100deg, rgb(77 107 254 / .16), rgb(77 107 254 / .04) 60%, transparent);
+    text-decoration: none; color: var(--fg);
+    transition: border-color .15s, transform .15s, background .15s;
+  }
+  a.promo:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .promo-ico { font-size: 22px; line-height: 1; flex: none; }
+  .promo-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+  .promo-text b { font-size: 14px; }
+  .promo-text span { color: var(--muted); font-size: 12.5px; line-height: 1.55; }
+  .promo-go {
+    flex: none; font-size: 13px; font-weight: 600; color: #fff;
+    background: var(--accent); border-radius: 999px; padding: 8px 14px; white-space: nowrap;
+  }
+  .promo-go i { font-style: normal; }
+  html[data-device="phone"] a.promo { flex-wrap: wrap; padding: 12px; gap: 10px; margin-bottom: 14px; }
+  html[data-device="phone"] .promo-text { flex-basis: 100%; order: 3; }
+  html[data-device="phone"] .promo-go { margin-left: auto; }
+  html[data-device="tablet"] a.promo { margin-bottom: 16px; }
 </style>
 </head>
 <body>
@@ -324,8 +348,14 @@
       <span class="badge">DeepSeek Harness session.v4</span>
       <span class="badge">支持 Markdown / JSON</span>
     </div>
-    <div class="row" style="margin-bottom:18px">
-      </div>
+    <a class="promo" href="https://649767694967.github.io/deepseek-chat-client/" target="_blank" rel="noreferrer">
+      <span class="promo-ico">💬</span>
+      <span class="promo-text">
+        <b>导完之后想接着聊？不用装任何 App</b>
+        <span>打开这个网页版聊天就能用：界面跟手机上的 DeepSeek 一样，自己填个 API Key 就能说话。带破甲提示词、回退、上下文压缩，这里导出的记录也能直接导进去。</span>
+      </span>
+      <span class="promo-go">去网页聊天 <i>→</i></span>
+    </a>
   </header>
 
   <div class="mobile-note" id="mobileNote" hidden>
