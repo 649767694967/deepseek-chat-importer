@@ -594,34 +594,6 @@ async function exportChatboxV1(sel, opts = {}) {
   return { bytes, count: built.length };
 }
 
-/** 把选中的会话送进聊天客户端（写 localStorage 后跳转） */
-async function sendToChatClient() {
-  const sel = SESSIONS.filter((s) => s.selected);
-  if (!sel.length) {
-    log('没有选中任何会话', 'warn');
-    return;
-  }
-  const sessions = sel.map((s) => ({
-    id: s.id,
-    title: s.title,
-    createdAt: s.createdAt,
-    updatedAt: s.updatedAt,
-    messages: s.ds.messages.map((m) => ({
-      role: m.role,
-      content: m.text || '',
-      reasoning: m.thinking || undefined,
-      time: m.time,
-    })),
-  }));
-  try {
-    localStorage.setItem('dscc.v1.pendingImport', JSON.stringify({ format: 'ds-chat-client', version: 1, sessions }));
-  } catch (err) {
-    log('写入本机存储失败（隐私模式？）：' + (err?.message || err), 'err');
-    return;
-  }
-  log(`已把 ${sessions.length} 个会话交给聊天客户端，正在跳转…`, 'ok');
-  location.href = 'chat.html?import=pending';
-}
 async function exportDsh(sel, opts = {}) {
   const say = opts.quiet ? () => {} : log;
   const cwd = opts.cwd || ($('cwdInput').value || '').trim() || guessCwd();
@@ -922,8 +894,6 @@ document.querySelectorAll('.target').forEach((el) => {
     $('dshOpts').hidden = el.dataset.target !== 'dsh';
   });
 });
-
-$('toChatBtn')?.addEventListener('click', () => { sendToChatClient(); });
 
 $('go').addEventListener('click', async () => {
   const sel = SESSIONS.filter((s) => s.selected);
