@@ -1,0 +1,18 @@
+# 聊天导出数据（含个人隐私，永不入库）
+deepseek_data-*.zip
+chat_sessions/
+*.cbx
+
+# 本地构建/测试产物
+node_modules/
+preview.png
+_tools/
+dsh_verify/
+_asar_out/
+_asar_index.json
+*.jsonl
+*.zstd
+
+# 系统
+.DS_Store
+Thumbs.db

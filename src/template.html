@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeepSeek 聊天记录 → Chatbox / DeepSeek Harness 导入器</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg2: #151b23;
+    --bg3: #1c242e;
+    --line: #263140;
+    --fg: #e6edf3;
+    --muted: #8b98a5;
+    --accent: #4d6bfe;
+    --accent2: #6f8cff;
+    --ok: #3fb950;
+    --warn: #d29922;
+    --err: #f85149;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: radial-gradient(1200px 600px at 15% -10%, #16233a 0%, transparent 60%), var(--bg);
+    color: var(--fg);
+    font: 14px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    padding: 28px 20px 60px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  header h1 { font-size: 22px; margin: 0 0 6px; letter-spacing: .3px; }
+  header p { margin: 0; color: var(--muted); font-size: 13px; }
+  .badges { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 22px; }
+  .badge {
+    font-size: 12px; color: var(--muted); border: 1px solid var(--line);
+    background: var(--bg2); padding: 3px 10px; border-radius: 999px;
+  }
+  .card {
+    background: var(--bg2); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 18px; margin-bottom: 16px;
+  }
+  .card h2 { font-size: 15px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
+  .card h2 .step {
+    width: 20px; height: 20px; border-radius: 50%; background: var(--accent);
+    color: #fff; font-size: 12px; display: grid; place-items: center; flex: none;
+  }
+  .card .hint { color: var(--muted); font-size: 12.5px; margin: 0 0 14px; }
+  .drop {
+    border: 1.5px dashed #334155; border-radius: var(--radius); background: #10161e;
+    padding: 26px 18px; text-align: center; transition: .15s;
+    cursor: pointer;
+  }
+  .drop.hot { border-color: var(--accent); background: #121b2e; }
+  .drop .big { font-size: 15px; margin-bottom: 6px; }
+  .drop .sub { color: var(--muted); font-size: 12.5px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  button {
+    font: inherit; font-size: 13px; padding: 8px 16px; border-radius: 9px;
+    border: 1px solid var(--line); background: var(--bg3); color: var(--fg);
+    cursor: pointer; transition: .15s;
+  }
+  button:hover:not(:disabled) { border-color: #3b4a5e; background: #222d3a; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: var(--accent2); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .ghost { background: transparent; }
+  input[type=text] {
+    font: inherit; font-size: 13px; padding: 8px 12px; border-radius: 9px;
+    border: 1px solid var(--line); background: #0e141b; color: var(--fg); min-width: 260px;
+  }
+  label.check { display: inline-flex; gap: 7px; align-items: center; color: var(--muted); font-size: 13px; cursor: pointer; }
+  .list { max-height: 320px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; margin-top: 12px; }
+  .item {
+    display: grid; grid-template-columns: 26px 1fr auto; gap: 10px; align-items: center;
+    padding: 8px 12px; border-bottom: 1px solid #1b232d; font-size: 13px;
+  }
+  .item:last-child { border-bottom: none; }
+  .item:hover { background: #131a22; }
+  .item .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .m { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .item input { accent-color: var(--accent); }
+  .stat { color: var(--muted); font-size: 12.5px; margin-top: 10px; }
+  .log {
+    font: 12.5px/1.55 ui-monospace, "Cascadia Mono", Consolas, monospace;
+    background: #0a0f15; border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px; max-height: 240px; overflow: auto; white-space: pre-wrap; color: #b9c6d3;
+  }
+  .log .ok { color: var(--ok); }
+  .log .err { color: var(--err); }
+  .log .warn { color: var(--warn); }
+  .log .dim { color: #5c6b7a; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
+  .targets { display: grid; gap: 10px; }
+  .target {
+    display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px;
+    border: 1px solid var(--line); border-radius: 10px; background: #10161e; cursor: pointer;
+  }
+  .target.sel { border-color: var(--accent); background: #121b2e; }
+  .target .tt { font-weight: 600; font-size: 13.5px; }
+  .target .td { color: var(--muted); font-size: 12.5px; }
+  .target input { margin-top: 3px; accent-color: var(--accent); }
+  progress { width: 100%; height: 6px; appearance: none; border: none; border-radius: 999px; overflow: hidden; }
+  progress::-webkit-progress-bar { background: #1b2531; }
+  progress::-webkit-progress-value { background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+  footer { color: #5c6b7a; font-size: 12px; text-align: center; margin-top: 28px; }
+  code { background: #10161e; border: 1px solid var(--line); padding: 1px 6px; border-radius: 6px; font-size: 12px; }
+  .kbd { color: var(--muted); }
+  details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  details { margin-top: 12px; }
+  .wrapcode { overflow-x: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>DeepSeek 聊天记录 → Chatbox / DeepSeek Harness</h1>
+    <p>把 DeepSeek 网页端导出的数据包（含图片、思考过程）转换成本地客户端可直接导入的备份。全部在浏览器本地完成，不联网、不上传。</p>
+    <div class="badges">
+      <span class="badge">纯离线单文件</span>
+      <span class="badge">Chatbox 备份 .cbx（formatVersion 2）</span>
+      <span class="badge">DeepSeek Harness session.v4</span>
+      <span class="badge">支持 Markdown / JSON</span>
+    </div>
+  </header>
+
+  <section class="card">
+    <h2><span class="step">1</span>选择 DeepSeek 导出数据</h2>
+    <p class="hint">支持直接拖入 <code>deepseek_data-*.zip</code>（官方导出），或解压后的整个文件夹（里面有 <code>chat_session_index.json</code> 和 <code>chat_sessions/</code>）；也支持 DeepSeek-Exporter 等扩展导出的 <code>.md</code> 对话记录（可多选/整个文件夹）。</p>
+    <div class="drop" id="drop">
+      <div class="big">把 zip / 文件夹 / .md 拖到这里</div>
+      <div class="sub">或者 <span style="color:var(--accent2)">点击选择文件</span>　·　也可以选文件夹</div>
+      <input type="file" id="fileInput" accept=".zip,.md,.markdown,application/zip,text/markdown" multiple hidden>
+      <input type="file" id="dirInput" webkitdirectory directory multiple hidden>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button id="pickZip" class="ghost">选择 zip / .md 文件</button>
+      <button id="pickDir" class="ghost">选择解压后的文件夹</button>
+      <label class="check"><input type="checkbox" id="wantImages" checked> 包含图片附件（体积较大）</label>
+    </div>
+    <div class="stat" id="sourceStat">尚未载入数据。</div>
+  </section>
+
+  <section class="card" id="sessionsCard" style="display:none">
+    <h2><span class="step">2</span>选择要导入的会话</h2>
+    <p class="hint">默认全选。可以在下面按关键字过滤。</p>
+    <div class="row">
+      <input type="text" id="search" placeholder="按标题过滤…">
+      <button id="selAll" class="ghost">全选</button>
+      <button id="selNone" class="ghost">全不选</button>
+      <span class="stat" id="selStat" style="margin:0"></span>
+    </div>
+    <div class="list" id="list"></div>
+  </section>
+
+  <section class="card" id="exportCard" style="display:none">
+    <h2><span class="step">3</span>导出</h2>
+    <p class="hint">选一个或多个目标格式，然后点击生成。</p>
+    <div class="targets">
+      <label class="target sel" data-target="chatbox">
+        <input type="radio" name="target" value="chatbox" checked>
+        <div>
+          <div class="tt">Chatbox 备份（.cbx）</div>
+          <div class="td">Chatbox 设置 → 数据 → 导入数据，选这个文件即可。图片、思考过程都会保留。</div>
+        </div>
+      </label>
+      <label class="target" data-target="chatboxV1">
+        <input type="radio" name="target" value="chatboxV1">
+        <div>
+          <div class="tt">Chatbox 旧版 JSON（-v1.json）</div>
+          <div class="td">单个 .json 文件，兼容所有 Chatbox 版本；只含文字与思考过程，不含图片附件。</div>
+        </div>
+      </label>
+      <label class="target" data-target="dsh">
+        <input type="radio" name="target" value="dsh">
+        <div>
+          <div class="tt">DeepSeek Harness 会话包（.zip）</div>
+          <div class="td">解压到 <code>%USERPROFILE%\.dsh\sessions\</code> 覆盖同名目录即可，包内附一键安装脚本。</div>
+        </div>
+      </label>
+      <label class="target" data-target="markdown">
+        <input type="radio" name="target" value="markdown">
+        <div>
+          <div class="tt">Markdown 归档（.zip）</div>
+          <div class="td">每个会话一个 .md，适合归档、检索、喂给别的工具。</div>
+        </div>
+      </label>
+      <label class="target" data-target="json">
+        <input type="radio" name="target" value="json">
+        <div>
+          <div class="tt">通用 JSON（.json）</div>
+          <div class="td">角色化消息数组（role / content / reasoning / time），方便自己写脚本。</div>
+        </div>
+      </label>
+    </div>
+    <div class="row" style="margin-top:14px" id="dshOpts" hidden>
+      <span class="kbd">工作区路径</span>
+      <input type="text" id="cwdInput" value="">
+      <span class="stat" style="margin:0">写进会话头的 <code>cwd</code>；在 DeepSeek Harness 里打开这个目录就能看到这些会话</span>
+    </div>
+    <div class="row" style="margin-top:16px">
+      <button id="go" class="primary" disabled>生成并下载</button>
+      <span class="stat" id="goStat" style="margin:0"></span>
+    </div>
+    <div style="margin-top:14px"><progress id="prog" value="0" max="1" hidden></progress></div>
+  </section>
+
+  <section class="card">
+    <h2>运行日志</h2>
+    <div class="log" id="log"><span class="dim">等待载入数据…</span></div>
+  </section>
+
+  <details>
+    <summary>导入后的操作提示</summary>
+    <div style="color:var(--muted);font-size:13px;margin-top:10px">
+      <p><b>Chatbox（推荐 .cbx）</b>：打开 Chatbox → 设置 → 数据 → 导入数据（Import Data）→ 选生成的 <code>.cbx</code>。图片、思考过程都会保留；备份版本为 formatVersion 2，Chatbox 1.23.5 及以后都能导入。</p>
+      <p><b>Chatbox 旧版（-v1.json）</b>：只含文字与思考过程，不含图片；任何版本的 Chatbox 都能吃。</p>
+      <p><b>DeepSeek Harness</b>：解压 zip → 运行 <code>install.ps1</code>（或把包里的 <code>sessions</code> 目录合并进 <code>%USERPROFILE%\.dsh\sessions</code>）→ 完全退出并重开 DeepSeek Harness。会话出现在对应 <code>cwd</code> 的工作区里，不需要额外建索引。</p>
+      <p><b>性能参考</b>（本机实测，Chrome）：80 MB 导出包 → 建索引只读约 120 KB；解析 244 个会话 / 1536 条消息约 2 秒；全量带图 .cbx 约 79 MB，约 2 秒生成。取消勾选“包含图片附件”可显著减小体积。</p>
+    </div>
+  </details>
+
+  <footer>本地转换 · 数据不离开这台电脑</footer>
+</div>
+
+<script type="module">
+/* ===== 内联模块开始 ===== */
+<!--INLINE:zipkit.js-->
+<!--INLINE:core.mjs-->
+<!--INLINE:dsh_session_writer.js-->
+<!--INLINE:app.js-->
+</script>
+</body>
+</html>
