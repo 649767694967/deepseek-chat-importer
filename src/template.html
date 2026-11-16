@@ -386,7 +386,11 @@
       <p><b>DeepSeek Harness</b>：解压 zip → 运行 <code>install.ps1</code>（或把包里的 <code>sessions</code> 目录合并进 <code>%USERPROFILE%\.dsh\sessions</code>）→ 完全退出并重开 DeepSeek Harness。会话出现在对应 <code>cwd</code> 的工作区里，不需要额外建索引。</p>
       <p><b>体积参考</b>：导出包里通常一大半是图片；带图备份会到几十 MB 量级，不含图片一般在几 MB 以内。手机上建议先不勾「包含图片附件」。</p>
       <p><b>手机上怎么用</b>：先在 DeepSeek 网页端（手机浏览器也行）「设置 → 数据管理 → 导出数据」把 zip 存到「文件 → 下载」，然后在本页点选它。生成后点「生成并下载」会弹出系统面板 —— iPhone 选「存储到“文件”」，Android 选「保存到设备 / 分享给应用」。手机内存有限，建议先不要勾选图片；只导几个会话会比全量更稳。</p>
-      <p><b>手机上导入</b>：Chatbox 的 iOS/Android App 同样支持 zip 备份，在 App 里「设置 → 数据 → 导入数据」选择刚保存的 <code>.cbx</code>。DeepSeek Harness 是桌面应用，手机上无法导入，请在电脑上操作。</p>
+      <p><b>手机上导入</b>：Chatbox 的 iOS/Android App 同样支持 zip 备份，在 App 里「设置 → 数据 → 导入数据」选择刚保存的 <code>.cbx</code>。</p>
+      <p><b>手机上的 DeepSeek Harness</b>：分三种情况 ——
+        ① 手机只是通过插件（如 <a href="https://github.com/saya-ch/dsh-mobile" target="_blank" rel="noreferrer">dsh-mobile</a>）远程访问电脑里的 DSH：会话仍存在电脑上，把会话包拿到电脑跑 <code>install.ps1</code>；
+        ② 手机上本机跑 DSH（Android + Termux、iOS + iSH / a-Shell、或 phone-dsh 一类移植版）：解压后执行 <code>sh install.sh</code>，默认写入 <code>~/.dsh/sessions</code>；
+        ③ 会话目录不在默认位置时：<code>sh install.sh /你的路径/.dsh/sessions</code>。包内 <code>安装说明.txt</code> 有逐步说明。</p>
     </div>
   </details>
 

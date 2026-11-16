@@ -43,8 +43,22 @@
 - **不支持拖拽，也不支持"选文件夹"** —— 点一下选择区，从「文件」里挑 `.zip` / `.md` 即可（这些入口会自动隐藏）
 - **默认关闭「包含图片附件」**：触屏设备内存有限，全量带图的备份可能到几十 MB；先只要文字，需要图片时再在电脑上补
 - **保存**：走系统分享/下载面板 —— iPhone / iPad 存到「文件 → 下载」，Android 存到「下载」，也可以直接分享给 Chatbox 等 App
-- **导入**：Chatbox 的 iOS/Android App 同样支持 zip 备份（设置 → 数据 → 导入数据）。DeepSeek Harness 是桌面应用，手机上无法导入
+- **导入**：Chatbox 的 iOS/Android App 同样支持 zip 备份（设置 → 数据 → 导入数据）
 - 只导几个会话会比一次导全部更稳；解析几十个会话通常在 1～2 秒内完成
+
+## 手机上的 DeepSeek Harness
+
+DSH 的手机形态有两种，导出的会话包都支持：
+
+| 你的情况 | 怎么装 |
+|---|---|
+| **手机远程用电脑里的 DSH**（[dsh-mobile](https://github.com/saya-ch/dsh-mobile) 插件 / 局域网访问 / Tailscale 等） | 会话仍存在电脑上 —— 把包拿到电脑，跑 `install.ps1`（Windows）或 `install.sh` |
+| **手机上本机跑 DSH**（Android + Termux、iOS + iSH / a-Shell、[phone-dsh](https://github.com/launsion-boop/phone-dsh) 一类移植版） | 解压后执行 `sh install.sh`，默认写入 `~/.dsh/sessions` |
+| 会话目录不在默认位置（App 沙盒等） | `sh install.sh /你的路径/.dsh/sessions` |
+
+包里自带 `install.ps1`（Windows）、`install.sh`（macOS / Linux / Termux / iSH）和 `安装说明.txt`（分平台步骤）。Termux 里可能需要先 `pkg install unzip`。
+
+> 手机端这条路是第三方社区方案（DSH 本体是桌面应用），装完后会话在 DSH 里按 `cwd` 归属的工作区出现，和桌面端一致。
 
 ## 支持的输出
 

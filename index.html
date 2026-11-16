@@ -442,7 +442,11 @@
       <p><b>DeepSeek Harness</b>：解压 zip → 运行 <code>install.ps1</code>（或把包里的 <code>sessions</code> 目录合并进 <code>%USERPROFILE%\.dsh\sessions</code>）→ 完全退出并重开 DeepSeek Harness。会话出现在对应 <code>cwd</code> 的工作区里，不需要额外建索引。</p>
       <p><b>体积参考</b>：导出包里通常一大半是图片；带图备份会到几十 MB 量级，不含图片一般在几 MB 以内。手机上建议先不勾「包含图片附件」。</p>
       <p><b>手机上怎么用</b>：先在 DeepSeek 网页端（手机浏览器也行）「设置 → 数据管理 → 导出数据」把 zip 存到「文件 → 下载」，然后在本页点选它。生成后点「生成并下载」会弹出系统面板 —— iPhone 选「存储到“文件”」，Android 选「保存到设备 / 分享给应用」。手机内存有限，建议先不要勾选图片；只导几个会话会比全量更稳。</p>
-      <p><b>手机上导入</b>：Chatbox 的 iOS/Android App 同样支持 zip 备份，在 App 里「设置 → 数据 → 导入数据」选择刚保存的 <code>.cbx</code>。DeepSeek Harness 是桌面应用，手机上无法导入，请在电脑上操作。</p>
+      <p><b>手机上导入</b>：Chatbox 的 iOS/Android App 同样支持 zip 备份，在 App 里「设置 → 数据 → 导入数据」选择刚保存的 <code>.cbx</code>。</p>
+      <p><b>手机上的 DeepSeek Harness</b>：分三种情况 ——
+        ① 手机只是通过插件（如 <a href="https://github.com/saya-ch/dsh-mobile" target="_blank" rel="noreferrer">dsh-mobile</a>）远程访问电脑里的 DSH：会话仍存在电脑上，把会话包拿到电脑跑 <code>install.ps1</code>；
+        ② 手机上本机跑 DSH（Android + Termux、iOS + iSH / a-Shell、或 phone-dsh 一类移植版）：解压后执行 <code>sh install.sh</code>，默认写入 <code>~/.dsh/sessions</code>；
+        ③ 会话目录不在默认位置时：<code>sh install.sh /你的路径/.dsh/sessions</code>。包内 <code>安装说明.txt</code> 有逐步说明。</p>
     </div>
   </details>
 
@@ -3596,6 +3600,67 @@ Write-Host ""
 Write-Host "请完全退出并重新打开 DeepSeek Harness，会话会出现在对应工作区的侧栏中。" -ForegroundColor Cyan
 `;
 
+// POSIX：macOS / Linux / Android Termux / iOS iSH·a-Shell
+const INSTALL_SH = `#!/bin/sh
+# DeepSeek Harness 会话包安装脚本
+#   sh install.sh              -> 装到 ~/.dsh/sessions
+#   sh install.sh /目标/路径    -> 装到指定会话根目录（例如 App 沙盒里的路径）
+set -e
+DEST="\${1:-$HOME/.dsh/sessions}"
+HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+SRC="$HERE/sessions"
+if [ ! -d "$SRC" ]; then
+  echo "找不到 sessions/ 目录：请保持解压后的目录结构（install.sh 与 sessions/ 同级）" >&2
+  exit 1
+fi
+mkdir -p "$DEST"
+cp -R "$SRC"/. "$DEST"/
+echo ""
+echo "已写入：$DEST"
+for d in "$SRC"/*; do
+  [ -d "$d" ] && echo "  + $(basename "$d")"
+done
+echo ""
+echo "如果 DeepSeek Harness 正在运行，请完全退出后重新打开；会话会出现在对应工作区的侧栏中。"
+`;
+
+function installReadme(cwd, count) {
+  return `DeepSeek Harness 会话包
+========================
+
+包里是什么
+  sessions/--<工作区目录名>--/session-<uuid>/session.v4.jsonl.zstd
+  这些会话会出现在 cwd 对应的工作区里。
+
+一、DSH 跑在电脑上（Windows / macOS / Linux）—— 最常见
+  Windows：右键 install.ps1 →「使用 PowerShell 运行」
+  其它：  sh install.sh
+  然后完全退出并重开 DeepSeek Harness。
+
+二、DSH 跑在手机本机
+  Android（Termux）：
+    pkg install unzip
+    cd ~/Download
+    unzip dsh-sessions-deepseek-*.zip -d dsh-import
+    cd dsh-import && sh install.sh
+  iPhone / iPad（iSH 或 a-Shell）：
+    同样解压后执行 sh install.sh
+  若你的会话目录不在 ~/.dsh/sessions（例如在某个 App 的沙盒目录里），
+  把路径传进去：sh install.sh /该路径/.dsh/sessions
+
+三、手机上用插件远程访问电脑里的 DSH（如 dsh-mobile）
+  这类方案里会话仍然存在电脑上 —— 请把本包拿到电脑，按「一」安装即可。
+
+四、装完没看到会话？
+  · 确认完全退出了 DeepSeek Harness（不是最小化）再重开
+  · 确认工作区路径是：${cwd}
+  · 会话文件必须叫 session.v4.jsonl.zstd，且与 uuid 目录同级
+
+工作区：${cwd}
+会话数：${count}
+`;
+}
+
 async function exportChatboxV1(sel, opts = {}) {
   log(`正在转换 ${sel.length} 个会话为 Chatbox V1 JSON…`);
   const built = [];
@@ -3627,25 +3692,29 @@ async function exportDsh(sel, opts = {}) {
       title: s.title,
       messages: messagesForDsh(s.ds),
     });
-    const rel = data.relativePath || `sessions/${key}/${sessionId}/session.v4.jsonl.zstd`;
-    files.push({ path: rel, data: data.bytes, deflate: false });
+    // 统一放进 sessions/ 目录：安装脚本按「sessions/ 与脚本同级」复制
+    const rel = (data.relativePath || `${key}/${sessionId}/session.v4.jsonl.zstd`).replace(/^sessions\//, '');
+    files.push({ path: `sessions/${rel}`, data: data.bytes, deflate: false });
     if (i % 5 === 4 || i === sel.length - 1) {
       setProgress(((i + 1) / sel.length) * 0.8, `编码中 ${i + 1}/${sel.length}`);
       await tick();
     }
     if ((i + 1) % 20 === 0) say(`  编码 ${i + 1}/${sel.length}`, 'dim');
   }
-  files.push({ path: 'install.ps1', data: utf8Encode(INSTALL_PS1), deflate: true });
+  // install.ps1 必须带 UTF-8 BOM：Windows PowerShell 5.1 会把无 BOM 的中文当 ANSI 解析而报语法错
+  files.push({ path: 'install.ps1', data: utf8Encode('\uFEFF' + INSTALL_PS1), deflate: true });
+  files.push({ path: 'install.sh', data: utf8Encode(INSTALL_SH), deflate: true });
   files.push({
     path: '安装说明.txt',
-    data: utf8Encode(
-      `DeepSeek Harness 会话包\n\n1) 解压本 zip\n2) 右键 install.ps1 → 使用 PowerShell 运行（或 powershell -ExecutionPolicy Bypass -File install.ps1）\n3) 完全退出并重新打开 DeepSeek Harness\n\n工作区：${cwd}\n会话数：${sel.length}\n`
-    ),
+    data: utf8Encode(installReadme(cwd, sel.length)),
     deflate: true,
   });
   const bytes = await writeZip(files);
   if (opts.download !== false) await saveFile(bytes, `dsh-sessions-deepseek-${stamp()}.zip`, 'application/zip');
-  say(`已生成 DSH 会话包：${fmtBytes(bytes.length)}（${sel.length} 个会话）`, 'ok');
+  say(`已生成 DSH 会话包：${fmtBytes(bytes.length)}（${sel.length} 个会话，含 install.ps1 / install.sh）`, 'ok');
+  if (isTouchLikeDevice()) {
+    say('手机端：可把包分享到电脑后用 install.ps1 安装；若 DSH 跑在手机（Termux / iSH），用 sh install.sh', 'dim');
+  }
   return { bytes, pathPrefix: `sessions/${key}/`, count: sel.length };
 }
 
@@ -3978,8 +4047,8 @@ function applyDevice(device) {
   const dshTip = document.querySelector('.target[data-target=dsh] .td');
   if (dshTip) {
     dshTip.textContent = touchLike
-      ? '需在电脑上使用：解压到 %USERPROFILE%\\.dsh\\sessions\\ 后重启 DeepSeek Harness。'
-      : '解压到 %USERPROFILE%\\.dsh\\sessions\\ 覆盖同名目录即可，包内附一键安装脚本。';
+      ? '手机本机跑 DSH（Termux / iSH）用包里的 install.sh；DSH 在电脑上就用 install.ps1。'
+      : '解压到 %USERPROFILE%\\.dsh\\sessions\\ 覆盖同名目录即可；包内附 install.ps1 与 install.sh。';
   }
 
   // 默认值只在用户没手动改过时套用
