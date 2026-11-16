@@ -200,15 +200,41 @@ function sourceFromFiles(files) {
   };
 }
 
+/* ---------------- 载入进度 ---------------- */
+
+function showLoad(title, ratio, sub) {
+  const box = $('loadBox');
+  if (!box) return;
+  box.hidden = false;
+  $('loadTitle').textContent = title;
+  const pct = Number.isFinite(ratio) ? Math.max(0, Math.min(1, ratio)) : 0;
+  $('loadProg').value = pct;
+  $('loadPct').textContent = Number.isFinite(ratio) ? Math.round(pct * 100) + '%' : '';
+  if (sub !== undefined) $('loadSub').textContent = sub;
+}
+
+function hideLoad() {
+  const box = $('loadBox');
+  if (box) box.hidden = true;
+}
+
+/** 解析阶段的进度：0 → 0.15 读索引，0.15 → 0.98 逐会话解析 */
+function phaseProgress(done, total, from, to) {
+  const r = total ? done / total : 1;
+  return from + (to - from) * r;
+}
+
 /* ---------------- 载入会话 ---------------- */
 
 async function loadSessions() {
-  const t0 = performance.now();
   SESSIONS = [];
   const sessionPaths = SOURCE.listSessions();
 
   if (sessionPaths.length) {
-    log(`发现 ${sessionPaths.length} 个会话文件`, 'dim');
+    const total = sessionPaths.length;
+    log(`发现 ${total} 个会话文件`, 'dim');
+    showLoad('正在解析会话…', 0.15, `共 ${total} 个会话，手机 / 平板上可能需要几秒，请稍等。`);
+    await tick();
     let done = 0;
     for (const p of sessionPaths) {
       try {
@@ -229,9 +255,14 @@ async function loadSessions() {
         log('解析失败：' + p + ' — ' + err.message, 'err');
       }
       done++;
-      if (done % 25 === 0) log(`已解析 ${done}/${sessionPaths.length} …`, 'dim');
+      // 每 3 个让出一次主线程，进度条在手机上也能动起来
+      if (done % 3 === 0 || done === total) {
+        showLoad(`正在解析会话 ${done}/${total}`, phaseProgress(done, total, 0.15, 0.98));
+        await tick();
+        if (done % 30 === 0) log(`已解析 ${done}/${total} …`, 'dim');
+      }
     }
-    finishLoad(t0, 'DeepSeek 官方导出');
+    finishLoad('DeepSeek 官方导出');
     return;
   }
 
@@ -247,7 +278,10 @@ async function loadSessions() {
   const mdPaths = typeof SOURCE.listMarkdown === 'function' ? SOURCE.listMarkdown() : [];
   if (mdPaths.length && !looksLikeExtension) {
     log(`没找到官方导出结构，尝试按 Markdown 会话解析（${mdPaths.length} 个 .md）`, 'warn');
-    for (const p of mdPaths) {
+    showLoad('正在解析 Markdown…', 0.1, `共 ${mdPaths.length} 个文件`);
+    await tick();
+    for (let i = 0; i < mdPaths.length; i++) {
+      const p = mdPaths[i];
       const name = p.slice(p.lastIndexOf('/') + 1);
       try {
         const text = await SOURCE.text(p);
@@ -274,9 +308,11 @@ async function loadSessions() {
       } catch (err) {
         log('解析失败：' + name + ' — ' + err.message, 'err');
       }
+      showLoad(`正在解析 ${i + 1}/${mdPaths.length}`, phaseProgress(i + 1, mdPaths.length, 0.1, 0.98));
+      await tick();
     }
     if (SESSIONS.length) {
-      finishLoad(t0, 'DeepSeek-Exporter 扩展的 Markdown');
+      finishLoad('DeepSeek-Exporter 扩展的 Markdown');
       return;
     }
   }
@@ -321,14 +357,29 @@ function diagnoseSource(opts = {}) {
     log('官方导出：chat.deepseek.com → 设置 → 数据管理 → 导出数据 → 得到 deepseek_data-*.zip', 'warn');
   }
   $('sourceStat').innerHTML = `<span style="color:var(--warn)">${msg}</span>`;
+  hideLoad();
+  const bar = $('loadedBar');
+  if (bar && !SESSIONS.length) bar.hidden = true;
 }
 
-function finishLoad(t0, formatName) {
+function finishLoad(formatName) {
   SESSIONS.sort((a, b) => b.updatedAt - a.updatedAt);
   const msgs = SESSIONS.reduce((a, s) => a + s.count, 0);
+
+  showLoad('载入完成', 1, '');
+  setTimeout(hideLoad, 400);
+
   $('sourceStat').innerHTML =
     `已载入 <b>${SOURCE.label}</b>（${formatName}）：${SESSIONS.length} 个会话 / ${msgs} 条消息（${SOURCE.kind === 'zip' ? SOURCE.count + ' 个 zip 条目' : SOURCE.count + ' 个文件'}）`;
-  log(`载入完成：${SESSIONS.length} 会话 / ${msgs} 消息，耗时 ${((performance.now() - t0) / 1000).toFixed(1)}s`, 'ok');
+  log(`载入完成：${SESSIONS.length} 会话 / ${msgs} 消息`, 'ok');
+
+  const bar = $('loadedBar');
+  if (bar) {
+    bar.hidden = false;
+    $('loadedText').textContent = `已载入 ${SESSIONS.length} 个会话（${SOURCE.label}）· 不需重复添加`;
+  }
+  const confirm = $('confirmBar');
+  if (confirm) confirm.hidden = true;
 
   renderList();
   $('sessionsCard').style.display = '';
@@ -565,6 +616,7 @@ async function withBusy(fn) {
   btn.disabled = true;
   $('prog').hidden = false;
   $('prog').value = 0;
+  $('drop').classList.add('busy'); // 解析期间不再响应拖拽/点击，避免重复添加
   try {
     await fn();
   } catch (err) {
@@ -575,28 +627,89 @@ async function withBusy(fn) {
     btn.disabled = false;
     $('prog').hidden = true;
     $('goStat').textContent = '';
+    $('drop').classList.remove('busy');
   }
 }
 
-async function handleSource(source) {
+/* ---- 防重复添加：已有数据时先确认 ---- */
+
+let pendingSource = null;
+let allowReplace = false;
+
+async function doLoadSource(source) {
   SOURCE = source;
-  log(`数据源：${source.label}（${source.kind === 'zip' ? 'zip' : '文件夹'}，${source.count} 项）`, 'ok');
+  const kindText = source.kind === 'zip' ? 'zip' : '文件夹';
+  log(`数据源：${source.label}（${kindText}，${source.count} 项）`, 'ok');
+  showLoad('正在读取数据…', 0.05, `${source.label} · ${source.count} ${source.kind === 'zip' ? '个条目' : '个文件'}`);
+
+  // 读取索引/建立数据源很轻，给一帧让进度条先画出来
+  await tick();
   await loadSessions();
 }
 
-$('drop').addEventListener('click', () => $('fileInput').click());
+async function handleSource(source) {
+  if (SESSIONS.length && !allowReplace) {
+    pendingSource = source;
+    const bar = $('confirmBar');
+    if (bar) {
+      bar.hidden = false;
+      $('confirmText').textContent =
+        `已经载入过 ${SESSIONS.length} 个会话（${SOURCE ? SOURCE.label : '上一次选择的数据'}），不需要重复添加。` +
+        `如果确实要换成「${source.label}」，点下面的按钮。`;
+    }
+    log('检测到重复添加，已暂停：请点「替换现有数据」或「取消」', 'warn');
+    hideLoad();
+    return;
+  }
+  allowReplace = false;
+  const bar = $('confirmBar');
+  if (bar) bar.hidden = true;
+  await doLoadSource(source);
+}
+
+$('confirmReplace').addEventListener('click', async () => {
+  const src = pendingSource;
+  pendingSource = null;
+  $('confirmBar').hidden = true;
+  if (!src) return;
+  allowReplace = true;
+  await withBusy(async () => {
+    await doLoadSource(src);
+  });
+  allowReplace = false;
+});
+$('confirmCancel').addEventListener('click', () => {
+  pendingSource = null;
+  $('confirmBar').hidden = true;
+  log('已取消，保留当前已载入的数据', 'dim');
+});
+$('reloadBtn').addEventListener('click', () => {
+  allowReplace = true;
+  $('confirmBar').hidden = true;
+  $('fileInput').click();
+});
+
+$('drop').addEventListener('click', () => {
+  if (busy) return;
+  $('fileInput').click();
+});
 $('pickZip').addEventListener('click', (e) => {
   e.stopPropagation();
+  if (busy) return;
   $('fileInput').click();
 });
 $('pickDir').addEventListener('click', (e) => {
   e.stopPropagation();
+  if (busy) return;
   $('dirInput').click();
 });
 $('fileInput').addEventListener('change', async (e) => {
   const files = [...(e.target.files || [])];
-  if (!files.length) return;
   e.target.value = '';
+  if (!files.length) {
+    allowReplace = false;
+    return;
+  }
   await withBusy(async () => {
     if (files.length === 1 && /\.zip$/i.test(files[0].name)) {
       await handleSource(await sourceFromZip(files[0]));
@@ -605,11 +718,17 @@ $('fileInput').addEventListener('change', async (e) => {
       await handleSource(sourceFromFiles(files));
     }
   });
+  allowReplace = false;
 });
 $('dirInput').addEventListener('change', async (e) => {
   const files = [...(e.target.files || [])];
-  if (!files.length) return;
+  e.target.value = '';
+  if (!files.length) {
+    allowReplace = false;
+    return;
+  }
   await withBusy(async () => handleSource(sourceFromFiles(files)));
+  allowReplace = false;
 });
 
 const drop = $('drop');
@@ -843,8 +962,11 @@ globalThis.__DS2CB__ = {
   sourceFromZip,
   sourceFromFiles,
   loadSessions,
+  handleSource,
   getSessions: () => SESSIONS,
   getSource: () => SOURCE,
+  getDevice: () => DEVICE,
+  isBusy: () => busy,
   exportChatbox,
   exportDsh,
   exportChatboxV1: (sel, opts = {}) => exportChatboxV1(sel, opts),
