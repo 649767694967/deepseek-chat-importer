@@ -68,8 +68,8 @@ for (const mod of modules) {
   console.log(`inlined: ${mod.file} (${code.length} bytes${mod.wrap ? ', wrapped as ' + mod.wrap : ''})`);
 }
 
-// 仓库布局输出 index.html（供 GitHub Pages），本地布局输出 deepseek-import.html
-const outName = process.env.OUT || (buildDir === here ? 'index.html' : 'deepseek-import.html');
+// 仓库布局（脚本在 src/）输出 index.html；本地布局（脚本在 _build/）输出 deepseek-import.html
+const outName = process.env.OUT || (path.basename(here) === 'src' ? 'index.html' : 'deepseek-import.html');
 const out = path.join(root, outName);
 fs.writeFileSync(out, html, 'utf8');
 console.log('wrote', out, html.length, 'bytes');

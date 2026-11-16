@@ -20,17 +20,80 @@ function fmtBytes(n) {
   return (n / 1024 / 1024).toFixed(1) + ' MB';
 }
 
-function download(bytes, filename, mime = 'application/octet-stream') {
+/* ---------------- 运行环境 ---------------- */
+
+const UA = navigator.userAgent || '';
+const IS_IOS = /iPad|iPhone|iPod/.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const IS_ANDROID = /Android/i.test(UA);
+const IS_TOUCH = (() => {
+  try {
+    const coarse = matchMedia('(pointer: coarse)').matches;
+    const noHover = matchMedia('(hover: none)').matches;
+    return (navigator.maxTouchPoints || 0) > 0 && (coarse || noHover);
+  } catch {
+    return false;
+  }
+})();
+// 桌面浏览器（Windows/macOS/Linux）即使带触屏也按桌面处理，避免误关图片附件
+const IS_DESKTOP_OS = /Windows NT|Macintosh|X11|CrOS/i.test(UA) && !IS_IOS && !IS_ANDROID;
+const MOBILE = IS_IOS || IS_ANDROID || (IS_TOUCH && !IS_DESKTOP_OS && Math.min(screen.width, screen.height) <= 820);
+
+const tick = () => new Promise((r) => setTimeout(r, 0));
+
+/**
+ * 保存/分享产物。
+ * - 移动端：优先系统分享（iOS「存储到文件」、Android「保存到设备/发送给 App」）
+ * - 桌面端 / 分享不可用：走 <a download>
+ * 返回 'shared' | 'downloaded' | 'cancelled'
+ */
+async function saveFile(bytes, filename, mime = 'application/octet-stream') {
   const blob = new Blob([bytes], { type: mime });
+
+  if (MOBILE && typeof File === 'function' && typeof navigator.canShare === 'function') {
+    try {
+      const file = new File([blob], filename, { type: mime });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: filename });
+        log(`已通过系统「分享 / 存储」交出：${filename}`, 'ok');
+        return 'shared';
+      }
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        log('已取消分享（文件没有保存）', 'warn');
+        return 'cancelled';
+      }
+      // 常见于浏览器要求「必须在用户手势内」——不再打扰用户，直接走下载
+      log('系统分享未启用，改用下载', 'dim');
+    }
+  }
+
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.rel = 'noopener';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    if (MOBILE) log(`已发起下载：${filename}（iPhone 会存到「文件 → 下载」，Android 存到「下载」）`, 'ok');
+    return 'downloaded';
+  } catch (err) {
+    // 极老 iOS 不支持 a.download：退回新标签打开
+    try {
+      window.open(url, '_blank');
+      log('已在新标签页打开，长按选择「存储到文件」', 'warn');
+      return 'downloaded';
+    } catch {
+      throw err;
+    }
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
+  }
 }
+
+const download = (bytes, filename, mime) => saveFile(bytes, filename, mime);
 
 function stamp() {
   const d = new Date();
@@ -39,6 +102,8 @@ function stamp() {
 }
 
 function detectPlatform() {
+  if (IS_IOS) return 'ios';
+  if (IS_ANDROID) return 'android';
   const ua = navigator.userAgent;
   if (/Windows/i.test(ua)) return 'win32';
   if (/Mac/i.test(ua)) return 'darwin';
@@ -351,6 +416,15 @@ function dshEncode(opts) {
   throw new Error('DSH 会话编码结果无效');
 }
 
+function setProgress(ratio, text) {
+  const p = $('prog');
+  if (p) {
+    p.hidden = false;
+    p.value = Math.max(0, Math.min(1, Number.isFinite(ratio) ? ratio : 0));
+  }
+  if (text) $('goStat').textContent = text;
+}
+
 async function exportChatbox(sel, opts = {}) {
   const say = opts.quiet ? () => {} : log;
   say(`正在转换 ${sel.length} 个会话为 Chatbox 备份…`);
@@ -359,18 +433,29 @@ async function exportChatbox(sel, opts = {}) {
   for (let i = 0; i < sel.length; i++) {
     const s = sel[i];
     built.push(await buildChatboxSession(s.ds, { readFile: (p) => SOURCE.bytes(p), includeImages }));
+    // 每 5 个会话让出一次主线程：手机端才不会「卡住没反应」
+    if (i % 5 === 4 || i === sel.length - 1) {
+      setProgress(((i + 1) / sel.length) * 0.7, `转换中 ${i + 1}/${sel.length}`);
+      await tick();
+    }
     if ((i + 1) % 20 === 0) say(`  转换 ${i + 1}/${sel.length}`, 'dim');
   }
   const imgCount = built.reduce((a, b) => a + b.resources.length, 0);
   say(`转换完成：${built.length} 会话，${imgCount} 张图片`, 'ok');
   say('生成备份归档…', 'dim');
+  setProgress(0.8, '打包中…');
+  await tick();
   const { entries, manifest } = await buildChatboxArchive(built, {
     appVersion: CHATBOX_VERSION,
     platform: detectPlatform(),
   });
   const bytes = await writeZip(entries);
-  if (opts.download !== false) download(bytes, `chatbox-backup-deepseek-${stamp()}.cbx`, 'application/zip');
+  setProgress(0.95, '保存中…');
+  if (opts.download !== false) await saveFile(bytes, `chatbox-backup-deepseek-${stamp()}.cbx`, 'application/zip');
   say(`已生成 .cbx：${fmtBytes(bytes.length)}`, 'ok');
+  if (MOBILE && bytes.length > 40 * 1024 * 1024) {
+    say('手机端提示：文件较大，若保存失败可取消勾选「包含图片附件」后重试', 'warn');
+  }
   return { bytes, manifest, entries: entries.length, images: imgCount };
 }
 
@@ -394,7 +479,7 @@ async function exportChatboxV1(sel, opts = {}) {
   }
   const json = buildChatboxV1File(built, { exportedAt: new Date() });
   const bytes = utf8Encode(json);
-  if (opts.download !== false) download(bytes, `chatbox-backup-deepseek-${stamp()}-v1.json`, 'application/json');
+  if (opts.download !== false) await saveFile(bytes, `chatbox-backup-deepseek-${stamp()}-v1.json`, 'application/json');
   log(`已生成 V1 JSON：${fmtBytes(bytes.length)}（${built.length} 个会话）`, 'ok');
   return { bytes, count: built.length };
 }
@@ -419,6 +504,10 @@ async function exportDsh(sel, opts = {}) {
     });
     const rel = data.relativePath || `sessions/${key}/${sessionId}/session.v4.jsonl.zstd`;
     files.push({ path: rel, data: data.bytes, deflate: false });
+    if (i % 5 === 4 || i === sel.length - 1) {
+      setProgress(((i + 1) / sel.length) * 0.8, `编码中 ${i + 1}/${sel.length}`);
+      await tick();
+    }
     if ((i + 1) % 20 === 0) say(`  编码 ${i + 1}/${sel.length}`, 'dim');
   }
   files.push({ path: 'install.ps1', data: utf8Encode(INSTALL_PS1), deflate: true });
@@ -430,7 +519,7 @@ async function exportDsh(sel, opts = {}) {
     deflate: true,
   });
   const bytes = await writeZip(files);
-  if (opts.download !== false) download(bytes, `dsh-sessions-deepseek-${stamp()}.zip`, 'application/zip');
+  if (opts.download !== false) await saveFile(bytes, `dsh-sessions-deepseek-${stamp()}.zip`, 'application/zip');
   say(`已生成 DSH 会话包：${fmtBytes(bytes.length)}（${sel.length} 个会话）`, 'ok');
   return { bytes, pathPrefix: `sessions/${key}/`, count: sel.length };
 }
@@ -443,7 +532,7 @@ async function exportMarkdown(sel) {
     files.push({ path: `${safe}.md`, data: utf8Encode(md), deflate: true });
   }
   const bytes = await writeZip(files);
-  download(bytes, `deepseek-markdown-${stamp()}.zip`, 'application/zip');
+  await saveFile(bytes, `deepseek-markdown-${stamp()}.zip`, 'application/zip');
   log(`已生成 Markdown 归档：${sel.length} 个文件`, 'ok');
 }
 
@@ -463,7 +552,7 @@ async function exportJson(sel) {
     })),
   }));
   const bytes = utf8Encode(JSON.stringify(out, null, 2));
-  download(bytes, `deepseek-chats-${stamp()}.json`, 'application/json');
+  await saveFile(bytes, `deepseek-chats-${stamp()}.json`, 'application/json');
   log(`已生成 JSON：${fmtBytes(bytes.length)}`, 'ok');
 }
 
@@ -487,6 +576,7 @@ async function withBusy(fn) {
     busy = false;
     btn.disabled = false;
     $('prog').hidden = true;
+    $('goStat').textContent = '';
   }
 }
 
@@ -630,6 +720,7 @@ $('go').addEventListener('click', async () => {
     return;
   }
   const target = document.querySelector('input[name=target]:checked')?.value || 'chatbox';
+  $('goStat').textContent = '';
   await withBusy(async () => {
     if (target === 'chatbox') await exportChatbox(sel);
     else if (target === 'chatboxV1') await exportChatboxV1(sel);
@@ -637,7 +728,56 @@ $('go').addEventListener('click', async () => {
     else if (target === 'markdown') await exportMarkdown(sel);
     else await exportJson(sel);
   });
+  $('goStat').textContent = '';
+  setTimeout(() => {
+    $('prog').hidden = true;
+  }, 800);
 });
+
+/* ---------------- 移动端适配 ---------------- */
+
+if (MOBILE) {
+  const note = $('mobileNote');
+  if (note) note.hidden = false;
+
+  const big = $('dropBig');
+  if (big) big.textContent = '点这里选择 .zip / .md 文件';
+  const sub = $('dropSub');
+  if (sub) sub.innerHTML = '<span style="color:var(--accent2)">点按选择</span>　支持官方导出 zip 与对话 .md';
+
+  // 手机上大区域点击就够了，隐藏重复的按钮与不适用的文件夹入口
+  const pk = $('pickZip');
+  if (pk) pk.style.display = 'none';
+  const pd = $('pickDir');
+  if (pd) pd.style.display = 'none';
+
+  // 文案换成移动端实际可用的操作
+  const sourceHint = document.querySelector('section.card .hint');
+  if (sourceHint) {
+    sourceHint.innerHTML =
+      '在 DeepSeek 网页端点「设置 → 数据管理 → 导出数据」，把下载到的 <code>deepseek_data-*.zip</code> 选进来；也可以选扩展导出的 <code>.md</code>（可多选）。';
+  }
+
+  // 手机内存/网速都紧张：默认不带图片，用户需要时再勾
+  const wi = $('wantImages');
+  if (wi) wi.checked = false;
+
+  // 手机上没有 DSH 桌面客户端：标注一下，默认目标切到 Chatbox（它自己有 iOS/Android App）
+  const dshTip = document.querySelector('.target[data-target=dsh] .td');
+  if (dshTip) dshTip.textContent = '需在电脑上使用：解压到 %USERPROFILE%\\.dsh\\sessions\\ 后重启 DeepSeek Harness。';
+  const cb = document.querySelector('input[name=target][value=chatbox]');
+  if (cb) {
+    cb.checked = true;
+    document.querySelectorAll('.target').forEach((x) =>
+      x.classList.toggle('sel', x.dataset.target === 'chatbox')
+    );
+  }
+
+  log(
+    `已识别为移动端（${IS_IOS ? 'iOS' : IS_ANDROID ? 'Android' : '触屏设备'}）：已默认关闭图片附件；生成后请用系统下载/分享面板保存`,
+    'dim'
+  );
+}
 
 logEl.textContent = '';
 log('就绪。把一个 deepseek_data-*.zip 拖进上面的区域开始。', 'dim');
