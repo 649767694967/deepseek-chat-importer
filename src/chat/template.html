@@ -1882,6 +1882,85 @@ html[data-device="desktop"] .drawer-conv { display: none; }
   }
   .msg { opacity: 1; transform: none; }
 }
+
+/* ================= 新手引导（首次强制阅读） ================= */
+.onboard {
+  position: fixed;
+  inset: 0;
+  z-index: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgb(0 0 0 / .62);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  overflow-y: auto;
+}
+.onboard[hidden] { display: none; }
+.onboard-card {
+  width: min(520px, 100%);
+  max-height: min(88vh, 760px);
+  overflow-y: auto;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 22px 22px 18px;
+  box-shadow: 0 24px 60px rgb(0 0 0 / .5);
+}
+.onboard-hero { font-size: 34px; line-height: 1; margin-bottom: 8px; }
+.onboard-card h2 { margin: 0 0 6px; font-size: 19px; }
+.onboard-sub { margin: 0 0 16px; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.onboard-steps { margin: 0 0 14px; padding: 0; list-style: none; counter-reset: step; display: grid; gap: 12px; }
+.onboard-steps > li {
+  counter-increment: step;
+  position: relative;
+  padding: 11px 13px 11px 40px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.65;
+}
+.onboard-steps > li::before {
+  content: counter(step);
+  position: absolute;
+  left: 12px; top: 12px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--accent); color: #fff;
+  font-size: 11.5px; font-weight: 700;
+  display: grid; place-items: center;
+}
+.onboard-steps > li > b:first-child { display: block; margin-bottom: 3px; font-size: 13.5px; }
+.onboard-steps p { margin: 0; color: var(--muted); }
+.onboard-steps a { color: var(--accent2); }
+.onboard-steps code { font-family: var(--mono); font-size: 12px; background: var(--bg-elev); border: 1px solid var(--line); padding: 1px 5px; border-radius: 5px; }
+.onboard-tip {
+  font-size: 12.5px; color: var(--muted);
+  background: rgb(77 107 254 / .1); border: 1px solid rgb(77 107 254 / .28);
+  border-radius: 10px; padding: 9px 12px; margin-bottom: 14px;
+}
+.onboard-ack {
+  display: flex; gap: 9px; align-items: flex-start;
+  font-size: 13px; line-height: 1.5; margin-bottom: 14px; cursor: pointer;
+}
+.onboard-ack input { margin-top: 2px; width: 18px; height: 18px; accent-color: var(--accent); flex: none; }
+.onboard-actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+.onboard-actions .btn { min-height: 40px; }
+.onboard-actions .btn.primary { flex: 1 1 160px; }
+
+.appearance-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.appearance-row .btn { flex: 1 1 46%; min-height: 40px; font-size: 13px; }
+.top-conv { color: var(--muted); font-size: 12.5px; text-decoration: none; padding: 6px 10px; border: 1px solid var(--line); border-radius: 9px; }
+.top-conv:hover { color: var(--fg); border-color: var(--accent); }
+
+html[data-device="phone"] .onboard { padding: 0; align-items: flex-end; }
+html[data-device="phone"] .onboard-card {
+  width: 100%; max-height: 92dvh; border-radius: 18px 18px 0 0;
+  padding: 18px 16px calc(16px + env(safe-area-inset-bottom));
+}
+html[data-device="phone"] .onboard-actions .btn { min-height: 46px; }
+html[data-device="phone"] .appearance-row .btn { min-height: 44px; }
 </style>
 </head>
 
@@ -1894,12 +1973,9 @@ html[data-device="desktop"] .drawer-conv { display: none; }
     <div class="brand">DeepSeek 对话</div>
     <div id="topActions">
       <span id="connDot" title="连接状态" aria-label="连接状态"><i class="dot" data-state="off"></i></span>
-      <button id="themeBtn" class="icon-btn" type="button" title="切换深浅主题" aria-label="切换深浅主题">◐</button>
-      <button id="bgBtn" class="icon-btn" type="button" title="背景" aria-label="背景设置">▩</button>
-      <button id="avatarBtn" class="icon-btn" type="button" title="头像" aria-label="头像设置">☺</button>
-      <button id="helpBtn" class="icon-btn" type="button" title="使用教程" aria-label="使用教程"><span style="font-weight:700">?</span></button>
+      <button id="settingsBtn" class="icon-btn" type="button" title="设置" aria-label="打开设置">⚙</button>
     </div>
-    <a id="convLink" href="index.html" title="打开 DeepSeek 记录转换器">转换器</a>
+    <a id="convLink" class="top-conv" href="index.html" title="打开 DeepSeek 记录转换器">转换器</a>
   </header>
 
   <div class="layout">
@@ -1927,7 +2003,7 @@ html[data-device="desktop"] .drawer-conv { display: none; }
 
       <div id="sessionList"></div>
 
-      <button id="settingsBtn" class="btn drawer-settings" type="button" title="API Key / 模型 / 提示词">⚙ 设置 / API Key</button>
+      <button class="btn drawer-settings" type="button" data-open-settings title="API Key / 模型 / 提示词 / 外观">⚙ 设置 / API Key</button>
 
       <div class="drawer-foot">
         <p>数据只存在这台设备的浏览器里（localStorage），API Key 是明文，公用电脑注意。</p>
@@ -1937,7 +2013,42 @@ html[data-device="desktop"] .drawer-conv { display: none; }
     </aside>
 
     <!-- 抽屉遮罩 -->
-    <div id="scrim" aria-hidden="true"></div>
+    <!-- ================= 首次进入的新手引导（强制阅读一次） ================= -->
+<div id="onboard" class="onboard" hidden>
+  <div class="onboard-card" role="dialog" aria-modal="true" aria-labelledby="onboardTitle">
+    <div class="onboard-hero">🐳</div>
+    <h2 id="onboardTitle">三步就能开始聊天</h2>
+    <p class="onboard-sub">这个页面不内置任何账号，用的是你自己的 DeepSeek API Key。Key 只存在这台设备上。</p>
+
+    <ol class="onboard-steps">
+      <li>
+        <b>1. 去 DeepSeek 开放平台拿 Key</b>
+        <p>打开 <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noreferrer">platform.deepseek.com/api_keys</a>，登录后在「API keys」里点<b>创建</b>，会得到一串 <code>sk-…</code>；Key 只显示一次，当场复制。</p>
+      </li>
+      <li>
+        <b>2. 先充一点余额</b>
+        <p>回到 <a href="https://platform.deepseek.com/top_up" target="_blank" rel="noreferrer">platform.deepseek.com/top_up</a> 充值，按量计费，几块钱能用很久。余额为 0 时接口返回 402，页面会直接提示你。</p>
+      </li>
+      <li>
+        <b>3. 把 Key 填进来</b>
+        <p>点右上角 <b>⚙</b>（或左下角「设置 / API Key」），粘贴 Key，点「测试连接」，看到绿色提示就成功了，然后回到这里直接说话。</p>
+      </li>
+    </ol>
+
+    <div class="onboard-tip">头像、背景、提示词（含破甲）都在设置里，随时能改；不折腾这些也能正常聊天。</div>
+
+    <label class="onboard-ack">
+      <input id="onboardAck" type="checkbox">
+      <span>我看懂了：要自己准备 DeepSeek API Key，并按量付费</span>
+    </label>
+
+    <div class="onboard-actions">
+      <button id="onboardGo" class="btn" type="button">去看完整教程</button>
+      <button id="onboardDone" class="btn primary" type="button" disabled>开始聊天</button>
+    </div>
+  </div>
+</div>
+<div id="scrim" aria-hidden="true"></div>
 
     <!-- ================= 主区 ================= -->
     <main id="chatMain">
@@ -2039,6 +2150,15 @@ html[data-device="desktop"] .drawer-conv { display: none; }
         <button id="testConnBtn" class="btn" type="button">测试连接</button>
         <span id="testConnOut" class="test-out"></span>
       </div>
+
+      <div class="section-title">外观与帮助</div>
+      <div class="appearance-row">
+        <button id="themeBtn" class="btn" type="button" title="切换深浅主题">◐ 主题</button>
+        <button id="bgBtn" class="btn" type="button" title="换背景">▩ 背景</button>
+        <button id="avatarBtn" class="btn" type="button" title="换头像与名字">☺ 头像</button>
+        <button id="helpBtn" class="btn" type="button" title="使用教程">? 教程</button>
+      </div>
+      <p class="hint">新手引导可以随时从「? 教程」里重新打开。</p>
     </div>
     <div class="dlg-foot">
       <button id="saveSettingsBtn" class="btn primary" type="button">保存设置</button>

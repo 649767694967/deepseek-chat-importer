@@ -28,15 +28,7 @@ const targets = [
       { file: 'app.js' },
     ],
   },
-  {
-    name: 'chat',
-    template: 'chat.template.html',
-    outName: 'chat.html',
-    modules: [
-      { file: 'device.js', slots: ['/*__INLINE_DEVICE__*/'] },
-      { file: 'chat.js' },
-    ],
-  },
+
 ];
 
 function stripModuleSyntax(name, code) {

@@ -260,6 +260,13 @@ function renderMessages() {
     const empty = el('div', 'empty');
     empty.appendChild(el('h2', '', '开始一段新对话'));
     empty.appendChild(el('p', '', '在下面输入框里说话；右上角可以换背景、头像、提示词，也可以导入 DeepSeek 的聊天记录。'));
+    const keyBtn = el('button', 'btn primary empty-key', '⚙ 填入 API Key 开始对话');
+    keyBtn.type = 'button';
+    keyBtn.addEventListener('click', () => {
+      fillSettingsForm();
+      openDlg('settingsDlg');
+    });
+    empty.appendChild(keyBtn);
     const tips = el('div', 'empty-tips');
     tips.appendChild(el('span', 'chip', '⚙️ 先填 API Key'));
     tips.appendChild(el('span', 'chip', '🎨 换背景 / 头像'));
@@ -1065,10 +1072,13 @@ function bindEvents() {
   $('selfAvatarFile')?.addEventListener('change', (e) => handleAvatarFile('user', e.target.files?.[0]));
   $('botAvatarFile')?.addEventListener('change', (e) => handleAvatarFile('bot', e.target.files?.[0]));
 
-  $('settingsBtn')?.addEventListener('click', () => {
+  const openSettings = () => {
     fillSettingsForm();
     openDlg('settingsDlg');
-  });
+    closeDrawer();
+  };
+  $('settingsBtn')?.addEventListener('click', openSettings);
+  document.querySelectorAll('[data-open-settings]').forEach((b) => b.addEventListener('click', openSettings));
   $('closeSettingsBtn')?.addEventListener('click', () => closeDlg('settingsDlg'));
   $('saveSettingsBtn')?.addEventListener('click', saveSettingsFromForm);
   $('testConnBtn')?.addEventListener('click', testConnection);
@@ -1220,6 +1230,67 @@ function autoGrow(ta) {
 
 /* ---------------- 启动 ---------------- */
 
+/* ---------------- 首次引导（强制读一次） ---------------- */
+
+const ONBOARD_KEY = 'onboarded';
+
+function finishOnboard() {
+  store.set(ONBOARD_KEY, true);
+  const box = $('onboard');
+  if (box) box.hidden = true;
+  document.body.classList.remove('onboarding');
+}
+
+function maybeOnboard() {
+  if (store.get(ONBOARD_KEY, false)) return;
+  const box = $('onboard');
+  if (!box) return;
+  box.hidden = false;
+  document.body.classList.add('onboarding');
+  const ack = $('onboardAck');
+  const done = $('onboardDone');
+  ack?.addEventListener('change', () => {
+    if (done) done.disabled = !ack.checked;
+  });
+  $('onboardGo')?.addEventListener('click', () => {
+    finishOnboard();
+    const body = $('helpBody');
+    if (body && !body.childElementCount) body.innerHTML = HELP_HTML;
+    openDlg('helpDlg');
+  });
+  done?.addEventListener('click', () => {
+    finishOnboard();
+    if (!state.settings.apiKey) {
+      fillSettingsForm();
+      openDlg('settingsDlg');
+    }
+  });
+}
+
+/** 转换器「发送到聊天客户端」写进 localStorage 的待导入会话 */
+async function importPendingFromConverter() {
+  const raw = store.get('pendingImport', null);
+  if (!raw) return false;
+  store.remove('pendingImport');
+  try {
+    const obj = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    const list = ccImportFromClientJson(obj);
+    if (!list.length) return false;
+    for (const s of list) {
+      state.sessions.unshift(s);
+      persistSession(s);
+    }
+    state.currentId = state.sessions[0].id;
+    renderSessions();
+    renderMessages();
+    toast(`已从转换器导入 ${list.length} 个会话`);
+    return true;
+  } catch (err) {
+    toast('导入转换器的数据失败：' + (err?.message || err), 'err');
+    return false;
+  }
+}
+
 function boot() {
   loadAll();
   applyTheme();
@@ -1231,10 +1302,15 @@ function boot() {
   renderSessions();
   renderMessages();
   bindEvents();
-  if (!state.settings.apiKey) {
-    setTimeout(() => {
-      toast('还没填 API Key，点右上角 ⚙ 设置', 'err');
-    }, 600);
+  maybeOnboard();
+  const wantImport = /[?&]import=pending\b/.test(location.search);
+  if (wantImport || store.get('pendingImport', null)) {
+    importPendingFromConverter().then((ok) => {
+      if (ok && wantImport) history.replaceState(null, '', location.pathname);
+    });
+  }
+  if (!state.settings.apiKey && store.get(ONBOARD_KEY, false)) {
+    setTimeout(() => toast('还没填 API Key，点右上角 ⚙ 设置', 'err'), 600);
   }
 }
 

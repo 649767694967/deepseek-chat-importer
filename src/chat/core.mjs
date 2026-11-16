@@ -368,7 +368,9 @@ export function ccDetectImport({ name = '', text = '', isZip = false, paths = []
 }
 
 export function ccSessionToMarkdown(session) {
-  const lines = [`# ${session.title || '会话'}`, ''];
+  // 刻意与「转换器」认识的格式对齐：首行 # AI 对话记录，正文用 ## 用户 / ## AI
+  // 这样客户端导出的 .md 可以直接拖回转换器，再变成 Chatbox / DSH 备份
+  const lines = ['# AI 对话记录', '', `> 会话：${session.title || '未命名'}`, ''];
   for (const m of session.messages || []) {
     lines.push(`## ${m.role === 'user' ? '用户' : m.role === 'system' ? '系统' : 'AI'}`, '');
     if (m.reasoning) lines.push('<details><summary>思考过程</summary>', '', m.reasoning, '', '</details>', '');
