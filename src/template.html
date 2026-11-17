@@ -392,11 +392,14 @@
     <div style="color:var(--muted);font-size:13px;margin-top:10px">
       <p><b>Chatbox（推荐 .cbx）</b>：打开 Chatbox → 设置 → 数据 → 导入数据（Import Data）→ 选生成的 <code>.cbx</code>。图片、思考过程都会保留；备份版本为 formatVersion 2，Chatbox 1.23.5 及以后都能导入。</p>
       <p><b>Chatbox 旧版（-v1.json）</b>：只含文字与思考过程，不含图片；任何版本的 Chatbox 都能吃。</p>
-      <p><b>DeepSeek Harness · 最快的方式：用官方导入插件（连文件都不用生成）</b><br>
-        新版 DSH 自带 <b>DeepSeek chat import</b> 插件，但<b>默认是关着的</b>，需要手动打开一次：<br>
-        DSH → 设置 → <b>插件（Plugins）</b> → 点 <b>「更多 / More」</b> 展开「实验性插件」→ 把 <b>DeepSeek chat import</b> 打开。<br>
-        启用后 <b>「新建会话」右边会出现一个上传按钮</b>，直接选 <code>deepseek_data-*.zip</code> 就能导入，标题、时间、图片、思考过程、联网搜索卡片都保留。<br>
-        <span style="color:#8b98a5">它是随 DSH 一起装好的内置插件，不需要另外下载或安装，只是默认关闭；关掉后按钮消失，已导入的会话不受影响。</span></p>
+      <p><b>DeepSeek Harness · 最快的方式：用官方导入插件（连会话文件都不用生成）</b><br>
+        新版 DSH 自带一个叫 <b>「DeepSeek 会话导入」</b> 的插件，<b>默认是关着的</b>，要手动开一次。<br>
+        位置在<b>左侧边栏的「插件」面板</b>里（不是设置页）：<br>
+        　　左侧栏 <b>插件</b> → 找到 <b>「实验性插件」</b> 分组 → 点右上角 <b>「更多」</b> → 列表里打开 <b>「DeepSeek 会话导入」</b><br>
+        开启后 <b>「新建会话」按钮右边会多出一个上传按钮</b>，点它选 <code>deepseek_data-*.zip</code>，选个工作区就能导入 ——
+        标题、时间、图片、思考过程、联网搜索卡片都会保留。<br>
+        <span style="color:#8b98a5">它是随 DSH 一起装好的，不需要另外下载安装，只是默认关闭；关掉开关后按钮消失，已导入的会话不受影响。
+        插件列表里显示的中文名是「DeepSeek 会话导入」，英文界面下叫 “DeepSeek chat import”。</span></p>
       <p><b>DeepSeek Harness · 用本工具生成的会话包</b><br>
         解压 zip → Windows 直接双击 <b>「一键安装（Windows）.bat」</b> → 看到「Done」后完全退出 DSH（托盘图标也要退）再重开。<br>
         会话会出现在 <code>cwd</code> 对应的工作区里，不需要建索引。<br>
