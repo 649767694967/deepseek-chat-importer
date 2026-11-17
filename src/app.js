@@ -508,6 +508,9 @@ async function exportChatbox(sel, opts = {}) {
   return { bytes, manifest, entries: entries.length, images: imgCount };
 }
 
+// fix-v4.mjs 的 base64（构建时注入，避免反引号/反斜杠转义问题）
+const FIX_V4_B64 = '__FIX_V4_B64__';
+
 const INSTALL_PS1 = `param([string]$Dest = (Join-Path $env:USERPROFILE ".dsh\\sessions"))
 $src = Join-Path $PSScriptRoot "sessions"
 if (-not (Test-Path $src)) { Write-Error "找不到 sessions 目录（请保持 zip 解压后的目录结构）"; exit 1 }
@@ -544,6 +547,70 @@ echo ""
 echo "如果 DeepSeek Harness 正在运行，请完全退出后重新打开；会话会出现在对应工作区的侧栏中。"
 `;
 
+// ---------------------------------------------------------------------------
+// Windows 一键安装（双击即可）：给不会用 PowerShell / sh 的人
+// ---------------------------------------------------------------------------
+const INSTALL_BAT = `@echo off
+setlocal
+set "DEST=%USERPROFILE%\.dsh\sessions"
+set "SRC=%~dp0sessions"
+echo Installing DeepSeek Harness sessions...
+echo.
+if not exist "%SRC%" (
+  echo [ERROR] "sessions" folder not found.
+  echo Unzip the whole archive first, then double-click this file again.
+  echo.
+  pause
+  exit /b 1
+)
+if not exist "%DEST%" mkdir "%DEST%" 2>nul
+xcopy "%SRC%" "%DEST%" /E /I /Y /Q >nul
+if errorlevel 1 (
+  echo [ERROR] Copy failed. Try right-click - Run as administrator.
+  echo.
+  pause
+  exit /b 1
+)
+echo Done. Sessions written to:
+echo   %DEST%
+echo.
+echo Next: quit DeepSeek Harness completely ^(tray icon too^), then start it again.
+echo.
+pause
+`;
+
+const FIX_BAT = `@echo off
+setlocal
+echo Repair old imported sessions ^(add the v4 system/message head^)
+echo.
+set "EXE="
+if exist "%LOCALAPPDATA%\\Programs\\DeepSeek Harness\\DeepSeek Harness.exe" set "EXE=%LOCALAPPDATA%\\Programs\\DeepSeek Harness\\DeepSeek Harness.exe"
+if not defined EXE if exist "C:\\Program Files\\deepseej\\DeepSeek Harness.exe" set "EXE=C:\\Program Files\\deepseej\\DeepSeek Harness.exe"
+if not defined EXE if exist "D:\\Program Files\\deepseej\\DeepSeek Harness.exe" set "EXE=D:\\Program Files\\deepseej\\DeepSeek Harness.exe"
+if not defined EXE if exist "%ProgramFiles%\\deepseej\\DeepSeek Harness.exe" set "EXE=%ProgramFiles%\\deepseej\\DeepSeek Harness.exe"
+if not defined EXE if exist "%ProgramFiles(x86)%\\deepseej\\DeepSeek Harness.exe" set "EXE=%ProgramFiles(x86)%\\deepseej\\DeepSeek Harness.exe"
+if not defined EXE (
+  echo DeepSeek Harness.exe not found automatically.
+  set /p EXE=Paste its full path here and press Enter: 
+)
+if not exist "%EXE%" (
+  echo [ERROR] Invalid path: %EXE%
+  echo.
+  pause
+  exit /b 1
+)
+if not exist "%~dp0fix-v4.mjs" (
+  echo [ERROR] fix-v4.mjs is missing next to this file.
+  echo.
+  pause
+  exit /b 1
+)
+set "ELECTRON_RUN_AS_NODE=1"
+"%EXE%" "%~dp0fix-v4.mjs" %*
+set "ELECTRON_RUN_AS_NODE="
+echo.
+pause
+`;
 function installReadme(cwd, count) {
   return `DeepSeek Harness 会话包
 ========================
@@ -552,10 +619,13 @@ function installReadme(cwd, count) {
   sessions/--<工作区目录名>--/session-<uuid>/session.v4.jsonl.zstd
   这些会话会出现在 cwd 对应的工作区里。
 
-一、DSH 跑在电脑上（Windows / macOS / Linux）—— 最常见
-  Windows：右键 install.ps1 →「使用 PowerShell 运行」
-  其它：  sh install.sh
-  然后完全退出并重开 DeepSeek Harness。
+一、DSH 跑在电脑上（Windows）—— 最常见，双击就行
+  1) 把整个压缩包解压到一个文件夹（不要直接在压缩包里双击）
+  2) 双击「一键安装（Windows）.bat」
+  3) 看到「已写入」后，完全退出 DeepSeek Harness（托盘图标也要退），再重新打开
+
+  如果双击 bat 没反应或被拦：右键 install.ps1 →「使用 PowerShell 运行」
+  macOS / Linux：sh install.sh
 
 二、DSH 跑在手机本机
   Android（Termux）：
@@ -571,7 +641,15 @@ function installReadme(cwd, count) {
 三、手机上用插件远程访问电脑里的 DSH（如 dsh-mobile）
   这类方案里会话仍然存在电脑上 —— 请把本包拿到电脑，按「一」安装即可。
 
-四、装完没看到会话？
+四、旧版本导入过的会话报 "protected first surface head"？
+  这是 DSH 新版对 v4 的新要求（会话开头必须有受保护的 system/message 头）。
+  · 用本工具重新导出的包已经带上了，不会再报；
+  · 之前导入过、现在打不开的旧会话：双击「修复旧会话（Windows）.bat」，
+    它会自动找到 DeepSeek Harness 并就地补头（原文件留 .bak 备份）。
+  · 也可以直接用新版 DSH 自带的导入：设置 → 插件 → 更多 → 打开「DeepSeek chat import」，
+    「新建会话」右边会出现上传按钮，可直接导 deepseek_data-*.zip。
+
+五、装完没看到会话？
   · 确认完全退出了 DeepSeek Harness（不是最小化）再重开
   · 确认工作区路径是：${cwd}
   · 会话文件必须叫 session.v4.jsonl.zstd，且与 uuid 目录同级
@@ -621,9 +699,15 @@ async function exportDsh(sel, opts = {}) {
     }
     if ((i + 1) % 20 === 0) say(`  编码 ${i + 1}/${sel.length}`, 'dim');
   }
+  // Windows 双击就能装（bat 用 CRLF，避免 cmd 解析异常）
+  const bat = (text) => utf8Encode(text.replace(/\r?\n/g, '\r\n'));
+  files.push({ path: '一键安装（Windows）.bat', data: bat(INSTALL_BAT), deflate: true });
   // install.ps1 必须带 UTF-8 BOM：Windows PowerShell 5.1 会把无 BOM 的中文当 ANSI 解析而报语法错
   files.push({ path: 'install.ps1', data: utf8Encode('\uFEFF' + INSTALL_PS1), deflate: true });
   files.push({ path: 'install.sh', data: utf8Encode(INSTALL_SH), deflate: true });
+  // v4 修复工具：救回旧版导入后报 "protected first surface head" 的会话
+  files.push({ path: '修复旧会话（Windows）.bat', data: bat(FIX_BAT), deflate: true });
+  files.push({ path: 'fix-v4.mjs', data: base64ToBytes(FIX_V4_B64), deflate: true });
   files.push({
     path: '安装说明.txt',
     data: utf8Encode(installReadme(cwd, sel.length)),
@@ -631,9 +715,10 @@ async function exportDsh(sel, opts = {}) {
   });
   const bytes = await writeZip(files);
   if (opts.download !== false) await saveFile(bytes, `dsh-sessions-deepseek-${stamp()}.zip`, 'application/zip');
-  say(`已生成 DSH 会话包：${fmtBytes(bytes.length)}（${sel.length} 个会话，含 install.ps1 / install.sh）`, 'ok');
+  say(`已生成 DSH 会话包：${fmtBytes(bytes.length)}（${sel.length} 个会话）`, 'ok');
+  say('包里带「一键安装（Windows）.bat」，解压后双击即可；会话文件已按新版 v4 规则写入', 'dim');
   if (isTouchLikeDevice()) {
-    say('手机端：可把包分享到电脑后用 install.ps1 安装；若 DSH 跑在手机（Termux / iSH），用 sh install.sh', 'dim');
+    say('手机端：可把包分享到电脑后用 bat 安装；若 DSH 跑在手机（Termux / iSH），用 sh install.sh', 'dim');
   }
   return { bytes, pathPrefix: `sessions/${key}/`, count: sel.length };
 }

@@ -1,0 +1,4163 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d1117">
+<meta name="format-detection" content="telephone=no">
+<title>DeepSeek 聊天记录 → Chatbox / DeepSeek Harness 导入器</title>
+<script>/* ===== device.js ===== */
+/* ================= 设备识别（手机 / 平板 / 电脑） =================
+ * 内联在 <head> 里、样式之前执行，首帧就带正确的 data-device，避免闪一下桌面布局。
+ * app.js 复用同一个函数，并在窗口尺寸/旋转/分屏变化时重新判定。
+ */
+(function () {
+  function mq(q) {
+    try {
+      return window.matchMedia(q).matches;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function detectDevice() {
+    var ua = navigator.userAgent || '';
+    var w = window.innerWidth || document.documentElement.clientWidth || 1024;
+    var touch = (navigator.maxTouchPoints || 0) > 0;
+    var coarse = mq('(pointer: coarse)');
+    var noHover = mq('(hover: none)');
+
+    var UA_PHONE = /iPhone|iPod/i.test(ua) || (/Android/i.test(ua) && /Mobile/i.test(ua));
+    var UA_TABLET =
+      /iPad/i.test(ua) ||
+      (/Macintosh/i.test(ua) && touch) ||
+      (/Android/i.test(ua) && !/Mobile/i.test(ua)) ||
+      /Tablet|PlayBook|Silk|Kindle/i.test(ua);
+    var UA_DESKTOP = /Windows NT|Macintosh|X11|CrOS/i.test(ua) && !UA_PHONE && !UA_TABLET;
+
+    // 1) 先按 UA 定基础类别
+    var base = UA_PHONE
+      ? 'phone'
+      : UA_TABLET
+        ? 'tablet'
+        : UA_DESKTOP
+          ? 'desktop'
+          : touch && (coarse || noHover)
+            ? 'tablet'
+            : 'desktop';
+
+    // 2) 再按当前可用宽度修正：窄窗口 / 分屏 / 小窗都用更紧凑的一档
+    var device = base;
+    if (w < 600) device = 'phone';
+    else if (w < 900 && base === 'desktop' && (touch || coarse || noHover)) device = 'tablet';
+
+    return device;
+  }
+
+  function label(device) {
+    return device === 'phone' ? '手机' : device === 'tablet' ? '平板' : '电脑';
+  }
+
+  window.__DS2CB_DEVICE__ = { detect: detectDevice, label: label, current: null };
+  window.__DS2CB_DEVICE__.current = detectDevice();
+  document.documentElement.setAttribute('data-device', window.__DS2CB_DEVICE__.current);
+})();
+</script>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg2: #151b23;
+    --bg3: #1c242e;
+    --line: #263140;
+    --fg: #e6edf3;
+    --muted: #8b98a5;
+    --accent: #4d6bfe;
+    --accent2: #6f8cff;
+    --ok: #3fb950;
+    --warn: #d29922;
+    --err: #f85149;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: radial-gradient(1200px 600px at 15% -10%, #16233a 0%, transparent 60%), var(--bg);
+    color: var(--fg);
+    font: 14px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    padding: 28px 20px 60px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  a.nav-link {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; color: var(--fg); text-decoration: none;
+    border: 1px solid var(--line); background: var(--bg2);
+    padding: 8px 14px; border-radius: 10px; transition: .15s;
+  }
+  a.nav-link:hover { border-color: var(--accent); background: #121b2e; }
+  header h1 { font-size: clamp(18px, 1.1vw + 14px, 23px); margin: 0 0 6px; letter-spacing: .3px; }
+  header p { margin: 0; color: var(--muted); font-size: 13px; }
+  .badges { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 22px; }
+  .badge {
+    font-size: 12px; color: var(--muted); border: 1px solid var(--line);
+    background: var(--bg2); padding: 3px 10px; border-radius: 999px;
+  }
+  .card {
+    background: var(--bg2); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 18px; margin-bottom: 16px;
+  }
+  .card h2 { font-size: 15px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
+  .card h2 .step {
+    width: 20px; height: 20px; border-radius: 50%; background: var(--accent);
+    color: #fff; font-size: 12px; display: grid; place-items: center; flex: none;
+  }
+  .card .hint { color: var(--muted); font-size: 12.5px; margin: 0 0 14px; }
+  .drop {
+    border: 1.5px dashed #334155; border-radius: var(--radius); background: #10161e;
+    padding: 26px 18px; text-align: center; transition: .15s;
+    cursor: pointer;
+  }
+  .drop.hot { border-color: var(--accent); background: #121b2e; }
+  .drop .big { font-size: 15px; margin-bottom: 6px; }
+  .drop .sub { color: var(--muted); font-size: 12.5px; }
+  .drop.busy { pointer-events: none; opacity: .55; }
+
+  /* 载入进度 */
+  .load-box {
+    margin-top: 12px; border: 1px solid var(--line); border-radius: 10px;
+    background: #10161e; padding: 12px 14px;
+  }
+  .load-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 10px; font-size: 13px; margin-bottom: 8px;
+  }
+  .load-head #loadTitle { color: var(--fg); font-weight: 600; }
+  .load-pct { color: var(--accent2); font-variant-numeric: tabular-nums; font-size: 12.5px; }
+  .load-sub { color: var(--muted); font-size: 12px; margin-top: 8px; line-height: 1.5; }
+  .load-box progress { height: 8px; }
+
+  /* 已载入状态条 */
+  .loaded-bar {
+    margin-top: 12px; display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; flex-wrap: wrap;
+    border: 1px solid #1f4d2e; background: #0f1a14; border-radius: 10px; padding: 10px 12px;
+  }
+  .loaded-info { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #a7d7b5; min-width: 0; }
+  .loaded-info .tick {
+    width: 18px; height: 18px; border-radius: 50%; background: #1f6f3f; color: #fff;
+    display: grid; place-items: center; font-size: 11px; flex: none;
+  }
+  #loadedText { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* 重复载入确认 */
+  .confirm-bar {
+    margin-top: 12px; border: 1px solid #4a3a1e; background: #1c1608;
+    border-radius: 10px; padding: 12px 14px;
+  }
+  .confirm-text { font-size: 13px; color: #e3c98a; margin-bottom: 10px; line-height: 1.55; }
+  .confirm-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  button.small { min-height: 34px; padding: 6px 12px; font-size: 12.5px; }
+
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  button {
+    font: inherit; font-size: 13px; padding: 8px 16px; border-radius: 9px;
+    border: 1px solid var(--line); background: var(--bg3); color: var(--fg);
+    cursor: pointer; transition: .15s;
+  }
+  button:hover:not(:disabled) { border-color: #3b4a5e; background: #222d3a; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: var(--accent2); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .ghost { background: transparent; }
+  input[type=text] {
+    font: inherit; font-size: 13px; padding: 8px 12px; border-radius: 9px;
+    border: 1px solid var(--line); background: #0e141b; color: var(--fg); min-width: 260px;
+  }
+  label.check { display: inline-flex; gap: 7px; align-items: center; color: var(--muted); font-size: 13px; cursor: pointer; }
+  .list { max-height: 320px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; margin-top: 12px; }
+  .item {
+    display: grid; grid-template-columns: 26px 1fr auto; gap: 10px; align-items: center;
+    padding: 8px 12px; border-bottom: 1px solid #1b232d; font-size: 13px;
+  }
+  .item:last-child { border-bottom: none; }
+  .item:hover { background: #131a22; }
+  .item .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .m { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .item input { accent-color: var(--accent); }
+  .stat { color: var(--muted); font-size: 12.5px; margin-top: 10px; }
+  .log {
+    font: 12.5px/1.55 ui-monospace, "Cascadia Mono", Consolas, monospace;
+    background: #0a0f15; border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px; max-height: 240px; overflow: auto; white-space: pre-wrap; color: #b9c6d3;
+  }
+  .log .ok { color: var(--ok); }
+  .log .err { color: var(--err); }
+  .log .warn { color: var(--warn); }
+  .log .dim { color: #5c6b7a; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
+  .targets { display: grid; gap: 10px; }
+  .target {
+    display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px;
+    border: 1px solid var(--line); border-radius: 10px; background: #10161e; cursor: pointer;
+  }
+  .target.sel { border-color: var(--accent); background: #121b2e; }
+  .target .tt { font-weight: 600; font-size: 13.5px; }
+  .target .td { color: var(--muted); font-size: 12.5px; }
+  .target input { margin-top: 3px; accent-color: var(--accent); }
+  progress { width: 100%; height: 6px; appearance: none; border: none; border-radius: 999px; overflow: hidden; }
+  progress::-webkit-progress-bar { background: #1b2531; }
+  progress::-webkit-progress-value { background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+  footer { color: #5c6b7a; font-size: 12px; text-align: center; margin-top: 28px; }
+  code { background: #10161e; border: 1px solid var(--line); padding: 1px 6px; border-radius: 6px; font-size: 12px; }
+  .kbd { color: var(--muted); }
+  details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  details { margin-top: 12px; }
+  .wrapcode { overflow-x: auto; }
+
+  /* ---------- 设备档位：手机 / 平板 / 电脑 ----------
+   * 由 <head> 里的 device.js 在首帧写入 <html data-device>，
+   * 窗口尺寸 / 横竖屏 / 分屏变化时由 app.js 重新判定并切换。
+   */
+  html[data-device="desktop"] .mobile-only { display: none; }
+  html[data-device="phone"] .desktop-only,
+  html[data-device="tablet"] .desktop-only { display: none !important; }
+  html[data-device="desktop"] .mobile-note { display: none; }
+  .mobile-only { display: none; }
+  .mobile-note {
+    border: 1px solid #3a4a63; background: #121b2e; border-radius: 10px;
+    padding: 10px 12px; margin-bottom: 14px; font-size: 12.5px; color: #b9c6d3;
+    line-height: 1.55;
+  }
+  .mobile-note b { color: var(--accent2); }
+
+  /* ===== 手机 ===== */
+  html[data-device="phone"] { -webkit-text-size-adjust: 100%; }
+  html[data-device="phone"] body {
+    padding: 14px 12px calc(28px + env(safe-area-inset-bottom));
+    font-size: 14.5px;
+  }
+  html[data-device="phone"] .wrap { max-width: 100%; }
+  html[data-device="phone"] header h1 { font-size: 18px; line-height: 1.35; }
+  html[data-device="phone"] header p { font-size: 12.5px; }
+  html[data-device="phone"] .badges { margin: 10px 0 14px; gap: 6px; }
+  html[data-device="phone"] .badge { font-size: 11px; padding: 2px 8px; }
+  html[data-device="phone"] .card { padding: 14px 13px; margin-bottom: 12px; border-radius: 14px; }
+  html[data-device="phone"] .card h2 { font-size: 14.5px; }
+  html[data-device="phone"] .hint { font-size: 12px; }
+  html[data-device="phone"] .drop { padding: 18px 12px; }
+  html[data-device="phone"] .drop .big { font-size: 14px; }
+  html[data-device="phone"] .drop .sub { font-size: 12px; }
+  html[data-device="phone"] .row { gap: 8px; }
+  html[data-device="phone"] .row > button,
+  html[data-device="phone"] .row > .btn { flex: 1 1 44%; }
+  html[data-device="phone"] button,
+  html[data-device="phone"] .btn { min-height: 44px; padding: 10px 14px; font-size: 14px; }
+  html[data-device="phone"] button.small { min-height: 40px; padding: 8px 12px; font-size: 13px; }
+  html[data-device="phone"] .load-box { padding: 12px; }
+  html[data-device="phone"] .loaded-bar,
+  html[data-device="phone"] .confirm-bar { padding: 11px 12px; }
+  html[data-device="phone"] .confirm-actions > button { flex: 1 1 44%; }
+  html[data-device="phone"] #go { min-height: 48px; font-size: 15px; }
+  html[data-device="phone"] input[type=text] { font-size: 16px; min-height: 44px; width: 100%; min-width: 0; }
+  html[data-device="phone"] label.check { min-height: 36px; font-size: 13.5px; }
+  html[data-device="phone"] .list { max-height: 52dvh; }
+  html[data-device="phone"] .item { grid-template-columns: 30px 1fr auto; padding: 10px; font-size: 13.5px; gap: 8px; }
+  html[data-device="phone"] .item input[type=checkbox] { width: 22px; height: 22px; }
+  html[data-device="phone"] .item .m { font-size: 11.5px; }
+  html[data-device="phone"] .target { padding: 12px; }
+  html[data-device="phone"] .target .tt { font-size: 14px; }
+  html[data-device="phone"] .target .td { font-size: 12px; }
+  html[data-device="phone"] .target input { width: 20px; height: 20px; }
+  html[data-device="phone"] .log { font-size: 11.5px; max-height: 180px; }
+  html[data-device="phone"] footer { margin-top: 18px; font-size: 11.5px; }
+  html[data-device="phone"] .stat { font-size: 12px; }
+  html[data-device="phone"] #dshOpts { flex-direction: column; align-items: stretch; }
+
+  /* ===== 平板 ===== */
+  html[data-device="tablet"] body {
+    padding: 20px 18px calc(36px + env(safe-area-inset-bottom));
+    font-size: 15px;
+  }
+  html[data-device="tablet"] .wrap { max-width: 920px; }
+  html[data-device="tablet"] header h1 { font-size: clamp(19px, 1.5vw + 11px, 22px); }
+  html[data-device="tablet"] .card { padding: 18px 16px; border-radius: 14px; }
+  html[data-device="tablet"] .card h2 { font-size: 15px; }
+  html[data-device="tablet"] .hint { font-size: 13px; }
+  html[data-device="tablet"] .drop { padding: 22px 16px; }
+  html[data-device="tablet"] .row { gap: 10px; }
+  html[data-device="tablet"] .row > button,
+  html[data-device="tablet"] .row > .btn { min-height: 46px; flex: 0 1 auto; }
+  html[data-device="tablet"] button,
+  html[data-device="tablet"] .btn { min-height: 46px; padding: 10px 16px; font-size: 14.5px; }
+  html[data-device="tablet"] button.small { min-height: 42px; padding: 8px 14px; font-size: 13.5px; }
+  html[data-device="tablet"] #go { min-height: 50px; font-size: 15px; }
+  html[data-device="tablet"] input[type=text] { font-size: 16px; min-height: 44px; }
+  html[data-device="tablet"] label.check { min-height: 40px; font-size: 14px; }
+  html[data-device="tablet"] .list { max-height: min(48dvh, 460px); }
+  html[data-device="tablet"] .item { padding: 11px 12px; font-size: 14px; }
+  html[data-device="tablet"] .item input[type=checkbox] { width: 20px; height: 20px; }
+  html[data-device="tablet"] .item .m { font-size: 12px; }
+  html[data-device="tablet"] .targets { grid-template-columns: 1fr 1fr; }
+  html[data-device="tablet"] .target { padding: 13px; }
+  html[data-device="tablet"] .target .tt { font-size: 14px; }
+  html[data-device="tablet"] .target .td { font-size: 12.5px; }
+  html[data-device="tablet"] .target input { width: 19px; height: 19px; }
+  html[data-device="tablet"] .log { font-size: 12px; max-height: 220px; }
+  html[data-device="tablet"] #dshOpts { flex-wrap: wrap; }
+  html[data-device="tablet"] #dshOpts input[type=text] { flex: 1 1 320px; }
+
+  /* 平板竖屏（<700）时目标卡片回到单列，别挤成窄条 */
+  @media (max-width: 700px) {
+    html[data-device="tablet"] .targets { grid-template-columns: 1fr; }
+  }
+
+  /* 顶部推广条：引导到网页版聊天 */
+  a.promo {
+    display: flex; align-items: center; gap: 12px;
+    margin: 0 0 20px; padding: 13px 16px;
+    border: 1px solid #2b3a55; border-radius: 14px;
+    background: linear-gradient(100deg, rgb(77 107 254 / .16), rgb(77 107 254 / .04) 60%, transparent);
+    text-decoration: none; color: var(--fg);
+    transition: border-color .15s, transform .15s, background .15s;
+  }
+  a.promo:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .promo-ico { font-size: 22px; line-height: 1; flex: none; }
+  .promo-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+  .promo-text b { font-size: 14px; }
+  .promo-text span { color: var(--muted); font-size: 12.5px; line-height: 1.55; }
+  .promo-go {
+    flex: none; font-size: 13px; font-weight: 600; color: #fff;
+    background: var(--accent); border-radius: 999px; padding: 8px 14px; white-space: nowrap;
+  }
+  .promo-go i { font-style: normal; }
+  html[data-device="phone"] a.promo { flex-wrap: wrap; padding: 12px; gap: 10px; margin-bottom: 14px; }
+  html[data-device="phone"] .promo-text { flex-basis: 100%; order: 3; }
+  html[data-device="phone"] .promo-go { margin-left: auto; }
+  html[data-device="tablet"] a.promo { margin-bottom: 16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>DeepSeek 聊天记录 → Chatbox / DeepSeek Harness</h1>
+    <p>把 DeepSeek 网页端导出的数据包（含图片、思考过程）转换成本地客户端可直接导入的备份。全部在浏览器本地完成，不联网、不上传。</p>
+    <div class="badges">
+      <span class="badge">纯离线单文件</span>
+      <span class="badge">Chatbox 备份 .cbx（formatVersion 2）</span>
+      <span class="badge">DeepSeek Harness session.v4</span>
+      <span class="badge">支持 Markdown / JSON</span>
+    </div>
+    <a class="promo" href="https://649767694967.github.io/deepseek-chat-client/" target="_blank" rel="noreferrer">
+      <span class="promo-ico">💬</span>
+      <span class="promo-text">
+        <b>导完之后想接着聊？不用装任何 App</b>
+        <span>打开这个网页版聊天就能用：界面跟手机上的 DeepSeek 一样，自己填个 API Key 就能说话。带破甲提示词、回退、上下文压缩，这里导出的记录也能直接导进去。</span>
+      </span>
+      <span class="promo-go">去网页聊天 <i>→</i></span>
+    </a>
+  </header>
+
+  <div class="mobile-note" id="mobileNote" hidden>
+    <b id="noteTitle">触屏设备</b>：点下面的区域选 <code>.zip</code> / <code>.md</code> 文件即可（不支持拖拽与选文件夹）。生成后点保存，iPhone / iPad 存到「文件 → 下载」，Android 存到「下载」，也可直接分享给 Chatbox 等 App。图片很占体积，默认已关闭。
+  </div>
+
+  <section class="card">
+    <h2><span class="step">1</span>选择 DeepSeek 导出数据</h2>
+    <p class="hint">支持直接拖入 <code>deepseek_data-*.zip</code>（官方导出），或解压后的整个文件夹（里面有 <code>chat_session_index.json</code> 和 <code>chat_sessions/</code>）；也支持 DeepSeek-Exporter 等扩展导出的 <code>.md</code> 对话记录（可多选/整个文件夹）。</p>
+    <div class="drop" id="drop">
+      <div class="big" id="dropBig">把 zip / 文件夹 / .md 拖到这里</div>
+      <div class="sub" id="dropSub">或者 <span style="color:var(--accent2)">点击选择文件</span>　·　也可以选文件夹</div>
+      <input type="file" id="fileInput" accept=".zip,.md,.markdown,application/zip,text/markdown,application/octet-stream" multiple hidden>
+      <input type="file" id="dirInput" webkitdirectory directory multiple hidden>
+    </div>
+
+    <div class="load-box" id="loadBox" hidden>
+      <div class="load-head">
+        <span id="loadTitle">正在读取…</span>
+        <span class="load-pct" id="loadPct"></span>
+      </div>
+      <progress id="loadProg" max="1" value="0"></progress>
+      <div class="load-sub" id="loadSub">手机 / 平板上大文件解析会慢一些，请稍等，不要重复选择文件。</div>
+    </div>
+
+    <div class="loaded-bar" id="loadedBar" hidden>
+      <div class="loaded-info">
+        <span class="tick">✓</span>
+        <span id="loadedText">已载入数据</span>
+      </div>
+      <button id="reloadBtn" class="ghost small">重新选择数据</button>
+    </div>
+
+    <div class="confirm-bar" id="confirmBar" hidden>
+      <div class="confirm-text" id="confirmText">已经载入过数据了，要替换成新的吗？</div>
+      <div class="confirm-actions">
+        <button id="confirmReplace" class="primary small">替换现有数据</button>
+        <button id="confirmCancel" class="ghost small">取消</button>
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button id="pickZip" class="ghost">选择 zip / .md 文件</button>
+      <button id="pickDir" class="ghost desktop-only">选择解压后的文件夹</button>
+      <label class="check"><input type="checkbox" id="wantImages" checked> 包含图片附件（体积较大）</label>
+    </div>
+    <div class="stat" id="sourceStat">尚未载入数据。</div>
+  </section>
+
+  <section class="card" id="sessionsCard" style="display:none">
+    <h2><span class="step">2</span>选择要导入的会话</h2>
+    <p class="hint">默认全选。可以在下面按关键字过滤。</p>
+    <div class="row">
+      <input type="text" id="search" placeholder="按标题过滤…">
+      <button id="selAll" class="ghost">全选</button>
+      <button id="selNone" class="ghost">全不选</button>
+      <span class="stat" id="selStat" style="margin:0"></span>
+    </div>
+    <div class="list" id="list"></div>
+  </section>
+
+  <section class="card" id="exportCard" style="display:none">
+    <h2><span class="step">3</span>导出</h2>
+    <p class="hint">选一个或多个目标格式，然后点击生成。</p>
+    <div class="targets">
+      <label class="target sel" data-target="chatbox">
+        <input type="radio" name="target" value="chatbox" checked>
+        <div>
+          <div class="tt">Chatbox 备份（.cbx）</div>
+          <div class="td">Chatbox 设置 → 数据 → 导入数据，选这个文件即可。图片、思考过程都会保留。</div>
+        </div>
+      </label>
+      <label class="target" data-target="chatboxV1">
+        <input type="radio" name="target" value="chatboxV1">
+        <div>
+          <div class="tt">Chatbox 旧版 JSON（-v1.json）</div>
+          <div class="td">单个 .json 文件，兼容所有 Chatbox 版本；只含文字与思考过程，不含图片附件。</div>
+        </div>
+      </label>
+      <label class="target" data-target="dsh">
+        <input type="radio" name="target" value="dsh">
+        <div>
+          <div class="tt">DeepSeek Harness 会话包（.zip）</div>
+          <div class="td">解压到 <code>%USERPROFILE%\.dsh\sessions\</code> 覆盖同名目录即可，包内附一键安装脚本。</div>
+        </div>
+      </label>
+      <label class="target" data-target="markdown">
+        <input type="radio" name="target" value="markdown">
+        <div>
+          <div class="tt">Markdown 归档（.zip）</div>
+          <div class="td">每个会话一个 .md，适合归档、检索、喂给别的工具。</div>
+        </div>
+      </label>
+      <label class="target" data-target="json">
+        <input type="radio" name="target" value="json">
+        <div>
+          <div class="tt">通用 JSON（.json）</div>
+          <div class="td">角色化消息数组（role / content / reasoning / time），方便自己写脚本。</div>
+        </div>
+      </label>
+    </div>
+    <div class="row" style="margin-top:14px" id="dshOpts" hidden>
+      <span class="kbd">工作区路径</span>
+      <input type="text" id="cwdInput" value="">
+      <span class="stat" style="margin:0">写进会话头的 <code>cwd</code>；在 DeepSeek Harness 里打开这个目录就能看到这些会话</span>
+    </div>
+    <div class="row" style="margin-top:16px">
+      <button id="go" class="primary" disabled>生成并下载</button>
+      <span class="stat" id="goStat" style="margin:0"></span>
+    </div>
+    <div style="margin-top:14px"><progress id="prog" value="0" max="1" hidden></progress></div>
+  </section>
+
+  <section class="card">
+    <h2>运行日志</h2>
+    <div class="log" id="log"><span class="dim">等待载入数据…</span></div>
+  </section>
+
+  <details>
+    <summary>导入后的操作提示</summary>
+    <div style="color:var(--muted);font-size:13px;margin-top:10px">
+      <p><b>Chatbox（推荐 .cbx）</b>：打开 Chatbox → 设置 → 数据 → 导入数据（Import Data）→ 选生成的 <code>.cbx</code>。图片、思考过程都会保留；备份版本为 formatVersion 2，Chatbox 1.23.5 及以后都能导入。</p>
+      <p><b>Chatbox 旧版（-v1.json）</b>：只含文字与思考过程，不含图片；任何版本的 Chatbox 都能吃。</p>
+      <p><b>DeepSeek Harness</b>：解压 zip → 运行 <code>install.ps1</code>（或把包里的 <code>sessions</code> 目录合并进 <code>%USERPROFILE%\.dsh\sessions</code>）→ 完全退出并重开 DeepSeek Harness。会话出现在对应 <code>cwd</code> 的工作区里，不需要额外建索引。</p>
+      <p><b>体积参考</b>：导出包里通常一大半是图片；带图备份会到几十 MB 量级，不含图片一般在几 MB 以内。手机上建议先不勾「包含图片附件」。</p>
+      <p><b>手机上怎么用</b>：先在 DeepSeek 网页端（手机浏览器也行）「设置 → 数据管理 → 导出数据」把 zip 存到「文件 → 下载」，然后在本页点选它。生成后点「生成并下载」会弹出系统面板 —— iPhone 选「存储到“文件”」，Android 选「保存到设备 / 分享给应用」。手机内存有限，建议先不要勾选图片；只导几个会话会比全量更稳。</p>
+      <p><b>手机上导入</b>：Chatbox 的 iOS/Android App 同样支持 zip 备份，在 App 里「设置 → 数据 → 导入数据」选择刚保存的 <code>.cbx</code>。</p>
+      <p><b>手机上的 DeepSeek Harness</b>：分三种情况 ——
+        ① 手机只是通过插件（如 <a href="https://github.com/saya-ch/dsh-mobile" target="_blank" rel="noreferrer">dsh-mobile</a>）远程访问电脑里的 DSH：会话仍存在电脑上，把会话包拿到电脑跑 <code>install.ps1</code>；
+        ② 手机上本机跑 DSH（Android + Termux、iOS + iSH / a-Shell、或 phone-dsh 一类移植版）：解压后执行 <code>sh install.sh</code>，默认写入 <code>~/.dsh/sessions</code>；
+        ③ 会话目录不在默认位置时：<code>sh install.sh /你的路径/.dsh/sessions</code>。包内 <code>安装说明.txt</code> 有逐步说明。</p>
+    </div>
+  </details>
+
+  <footer>本机处理 · 数据不上传、不联网</footer>
+</div>
+
+<script type="module">
+/* ===== 内联模块开始 ===== */
+/* ===== zipkit.js ===== */
+/**
+ * zipkit.js — 零依赖 ZIP 读写工具（浏览器 / Node 通用 ESM）
+ * ============================================================================
+ * 设计目标
+ *   · 纯 JS，无任何第三方依赖，也不静态 import 任何 Node 内置模块（浏览器可直接加载）
+ *   · 读侧两段式：openZip() 只解析 EOCD + central directory 建索引（不解压任何数据），
+ *     之后按需 read()/readEntry() 单独解一个条目 —— 80MB 的 DeepSeek 导出 zip 里
+ *     77MB 是图片，网页可以只解 json、图片以后再说，内存不会爆
+ *   · 写入侧：本地文件头直接写 crc/size（不写数据描述符），UTF-8 文件名 flag(bit 11)
+ *     始终置位，central directory + EOCD(+ZIP64) 按规范输出，fflate / JSZip 可直接读
+ *
+ * 解压后端（method 8 deflate）
+ *   1) DecompressionStream('deflate-raw')（浏览器原生，Chromium 103+/Safari 16.4+）
+ *   2) 本文件内置的纯 JS raw-inflate（同步、任何环境可用）
+ *   3) Node 环境下才走 `await import('node:zlib')`（动态引入，浏览器端永远不会执行到）
+ *   每一步都用 CRC32 校验，native 结果不对会自动回退到纯 JS。
+ *
+ * 压缩后端（写入 method 8）
+ *   1) 调用方注入的 options.compressor（测试里用 zlib.deflateRawSync 验证兼容性）
+ *   2) CompressionStream('deflate-raw')
+ *   3) Node：动态 import('node:zlib').deflateRawSync（仅 Node，浏览器不进入该分支）
+ *   4) 全不可用 → 退化为 store（method 0），产出的 zip 依然合法
+ *
+ * 快速上手
+ *   const zip = await openZip(bytesOrFile);
+ *   zip.entries;                                  // [{ path, method, compressedSize, uncompressedSize, crc32, ... }]
+ *   zip.has('chat_session_index.json');
+ *   const data = await zip.read('chat_session_index.json');   // Uint8Array，只解这一个
+ *   const idx  = await zip.json('chat_session_index.json');
+ *
+ *   await readZip(file, { filter: '/\.json$/'.replace... }); // 见 makeFilter
+ *   await readZip(file, { filter: (e) => e.path.endsWith('.json'),
+ *                         onEntry({ path, data }) { ... } });  // 逐个回调，不留全量内存
+ *
+ *   const out = await writeZip([
+ *     { path: 'manifest.json', data: JSON.stringify(m) },
+ *     { path: 'sessions/中文/session.json', data: jsonBytes, deflate: true },
+ *   ]);                                            // → Uint8Array(.cbx 内容)
+ *
+ * @version 1.0.0
+ */
+
+const VERSION = '1.0.0';
+
+/* ==========================================================================
+ * 0. 基础工具
+ * ========================================================================== */
+
+const EMPTY = new Uint8Array(0);
+
+const SIG_LOCAL = 0x04034b50;
+const SIG_CENTRAL = 0x02014b50;
+const SIG_EOCD = 0x06054b50;
+const SIG_EOCD64 = 0x06064b50;
+const SIG_EOCD64_LOCATOR = 0x07064b50;
+const SIG_DATA_DESCRIPTOR = 0x08074b50;
+
+const FLAG_UTF8 = 0x0800; // general purpose bit 11
+const FLAG_DESCRIPTOR = 0x0008; // general purpose bit 3（尺寸写在数据描述符里）
+
+const MAX16 = 0xffff;
+const MAX32 = 0xffffffff;
+
+function u16(b, o) {
+  return b[o] | (b[o + 1] << 8);
+}
+function u32(b, o) {
+  return (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
+}
+function u64(b, o) {
+  return u32(b, o) + u32(b, o + 4) * 4294967296;
+}
+function has(haystack, needle, at) {
+  for (let i = 0; i < needle.length; i++) if (haystack[at + i] !== needle[i]) return false;
+  return true;
+}
+
+const textDecoder = typeof TextDecoder === 'function' ? new TextDecoder('utf-8') : null;
+const textEncoder = typeof TextEncoder === 'function' ? new TextEncoder() : null;
+
+function decodeUtf8(bytes) {
+  if (textDecoder) return textDecoder.decode(bytes);
+  // 极端退化环境
+  let s = '';
+  for (let i = 0; i < bytes.length; i++) s += '%' + bytes[i].toString(16).padStart(2, '0');
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+
+function encodeUtf8(str) {
+  if (textEncoder) return textEncoder.encode(str);
+  const out = [];
+  for (let i = 0; i < str.length; i++) {
+    let c = str.charCodeAt(i);
+    if (c < 0x80) out.push(c);
+    else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 63));
+    else if (c >= 0xd800 && c <= 0xdbff) {
+      const c2 = str.charCodeAt(++i);
+      const cp = 0x10000 + ((c - 0xd800) << 10) + (c2 - 0xdc00);
+      out.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 63), 0x80 | ((cp >> 6) & 63), 0x80 | (cp & 63));
+    } else out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+  }
+  return new Uint8Array(out);
+}
+
+/** 统一的错误前缀，便于页面区分「zip 坏了」和别的错误 */
+function zipError(message) {
+  const err = new Error(`zipkit: ${message}`);
+  err.name = 'ZipError';
+  return err;
+}
+
+function isNode() {
+  try {
+    return !!(globalThis.process && globalThis.process.versions && globalThis.process.versions.node);
+  } catch {
+    return false;
+  }
+}
+
+function concatBytes(chunks, total) {
+  if (chunks.length === 1) return chunks[0];
+  let len = total;
+  if (len === undefined) {
+    len = 0;
+    for (const c of chunks) len += c.length;
+  }
+  const out = new Uint8Array(len);
+  let p = 0;
+  for (const c of chunks) {
+    out.set(c, p);
+    p += c.length;
+  }
+  return out;
+}
+
+function toBytes(data) {
+  if (data == null) return EMPTY;
+  if (data instanceof Uint8Array) return data;
+  if (data instanceof ArrayBuffer) return new Uint8Array(data);
+  if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  if (typeof data === 'string') return encodeUtf8(data);
+  if (typeof data.arrayBuffer === 'function') {
+    throw zipError('writeZip 需要已读好的字节，请先 await blob.arrayBuffer() 再传入');
+  }
+  throw zipError(`无法识别的 data 类型: ${Object.prototype.toString.call(data)}`);
+}
+
+/* ==========================================================================
+ * 1. CRC32
+ * ========================================================================== */
+
+let CRC_TABLE = null;
+function crcTable() {
+  if (CRC_TABLE) return CRC_TABLE;
+  const t = new Int32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c;
+  }
+  CRC_TABLE = t;
+  return t;
+}
+
+/**
+ * 计算 CRC32（IEEE 802.3，zip 用的那个）。
+ * @param {Uint8Array|ArrayBuffer|string} bytes
+ * @param {number} [previous] 上一次 crc32 的返回值，用于分块累加
+ * @returns {number} 无符号 32 位
+ */
+function crc32(bytes, previous = 0) {
+  const buf = typeof bytes === 'string' ? encodeUtf8(bytes) : toBytes(bytes);
+  const t = crcTable();
+  let c = (previous ^ -1) >>> 0;
+  for (let i = 0; i < buf.length; i++) c = (c >>> 8) ^ t[(c ^ buf[i]) & 0xff];
+  return (c ^ -1) >>> 0;
+}
+
+/** 增量 CRC32：new Crc32().update(a).update(b).digest() === crc32(concat(a,b)) */
+class Crc32 {
+  constructor() {
+    this.crc = 0;
+    this.length = 0;
+  }
+  update(bytes) {
+    const buf = typeof bytes === 'string' ? encodeUtf8(bytes) : toBytes(bytes);
+    this.crc = crc32(buf, this.crc);
+    this.length += buf.length;
+    return this;
+  }
+  digest() {
+    return this.crc;
+  }
+  reset() {
+    this.crc = 0;
+    this.length = 0;
+    return this;
+  }
+  /** 8 位小写 hex，顺带方便调试 */
+  hex() {
+    return this.crc.toString(16).padStart(8, '0');
+  }
+}
+
+/* ==========================================================================
+ * 2. 纯 JS raw inflate（RFC 1951）
+ * ========================================================================== */
+
+const LEN_BASE = [
+  3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258,
+];
+const LEN_EXTRA = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0];
+const DIST_BASE = [
+  1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145,
+  8193, 12289, 16385, 24577,
+];
+const DIST_EXTRA = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13];
+const CODE_LENGTH_ORDER = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
+const FAST_BITS = 10;
+
+/** LSB-first 位读取器 */
+class BitReader {
+  constructor(src) {
+    this.src = src;
+    this.pos = 0;
+    this.bitbuf = 0;
+    this.bitcnt = 0;
+  }
+  ensure(n) {
+    while (this.bitcnt < n) {
+      const byte = this.pos < this.src.length ? this.src[this.pos++] : 0;
+      this.bitbuf |= byte << this.bitcnt;
+      this.bitcnt += 8;
+    }
+  }
+  peek(n) {
+    this.ensure(n);
+    return this.bitbuf & ((1 << n) - 1);
+  }
+  drop(n) {
+    this.bitbuf >>>= n;
+    this.bitcnt -= n;
+  }
+  take(n) {
+    if (n === 0) return 0;
+    this.ensure(n);
+    const v = this.bitbuf & ((1 << n) - 1);
+    this.bitbuf >>>= n;
+    this.bitcnt -= n;
+    return v;
+  }
+  align() {
+    const r = this.bitcnt & 7;
+    if (r) this.drop(r);
+  }
+  /** 调用前必须 align()；把 len 个整字节写进 dest[off..] */
+  readBytes(dest, off, len) {
+    while (len > 0 && this.bitcnt >= 8) {
+      dest[off++] = this.bitbuf & 0xff;
+      this.drop(8);
+      len--;
+    }
+    if (len > 0) {
+      dest.set(this.src.subarray(this.pos, this.pos + len), off);
+      this.pos += len;
+    }
+  }
+}
+
+/**
+ * 构建 canonical Huffman 解码表。
+ * fast 表项 = (symbol << 5) | codeLength，0 表示需要走慢路径。
+ */
+function buildHuffman(lengths, n) {
+  const counts = new Uint16Array(16);
+  for (let i = 0; i < n; i++) counts[lengths[i]]++;
+  counts[0] = 0;
+  const offsets = new Uint16Array(16);
+  let total = 0;
+  for (let len = 1; len < 16; len++) {
+    offsets[len] = total;
+    total += counts[len];
+  }
+  const symbols = new Uint16Array(total);
+  for (let i = 0; i < n; i++) {
+    const l = lengths[i];
+    if (l) symbols[offsets[l]++] = i;
+  }
+  const fast = new Int32Array(1 << FAST_BITS);
+  let code = 0;
+  let k = 0;
+  for (let len = 1; len < 16; len++) {
+    for (let i = 0; i < counts[len]; i++) {
+      const sym = symbols[k++];
+      if (len <= FAST_BITS) {
+        let rev = 0;
+        for (let b = 0; b < len; b++) rev |= ((code >> b) & 1) << (len - 1 - b);
+        const entry = (sym << 5) | len;
+        const stride = 1 << len;
+        for (let j = rev; j < 1 << FAST_BITS; j += stride) fast[j] = entry;
+      }
+      code++;
+    }
+    code <<= 1;
+  }
+  return { counts, symbols, fast };
+}
+
+function decodeSlow(h, br) {
+  let code = 0;
+  let first = 0;
+  let index = 0;
+  for (let len = 1; len <= 15; len++) {
+    code |= br.take(1);
+    const count = h.counts[len];
+    if (code - first < count) return h.symbols[index + (code - first)];
+    index += count;
+    first = (first + count) << 1;
+    code <<= 1;
+  }
+  throw zipError('deflate 数据损坏（非法 Huffman 编码）');
+}
+
+function decodeSym(h, br) {
+  const entry = h.fast[br.peek(FAST_BITS)];
+  if (entry !== 0) {
+    const len = entry & 31;
+    if (len <= br.bitcnt) {
+      br.drop(len);
+      return entry >>> 5;
+    }
+  }
+  return decodeSlow(h, br);
+}
+
+let FIXED_LIT = null;
+let FIXED_DIST = null;
+function fixedTables() {
+  if (!FIXED_LIT) {
+    const lit = new Uint8Array(288);
+    for (let i = 0; i < 144; i++) lit[i] = 8;
+    for (let i = 144; i < 256; i++) lit[i] = 9;
+    for (let i = 256; i < 280; i++) lit[i] = 7;
+    for (let i = 280; i < 288; i++) lit[i] = 8;
+    const dist = new Uint8Array(32).fill(5);
+    FIXED_LIT = buildHuffman(lit, 288);
+    FIXED_DIST = buildHuffman(dist, 32);
+  }
+  return { lit: FIXED_LIT, dist: FIXED_DIST };
+}
+
+/**
+ * 纯 JS raw deflate 解压（RFC 1951，不含 zlib 头）。
+ * @param {Uint8Array} src
+ * @param {number} [sizeHint] 已知解压后大小（来自 central directory），可省去扩容拷贝
+ * @returns {Uint8Array}
+ */
+function inflateRaw(src, sizeHint = 0) {
+  const input = toBytes(src);
+  const br = new BitReader(input);
+  let out = new Uint8Array(sizeHint > 0 ? sizeHint : Math.max(1024, input.length * 4));
+  let op = 0;
+
+  const reserve = (need) => {
+    if (op + need <= out.length) return;
+    let cap = out.length || 1024;
+    while (cap < op + need) cap *= 2;
+    const next = new Uint8Array(cap);
+    next.set(out.subarray(0, op));
+    out = next;
+  };
+
+  let last = 0;
+  while (!last) {
+    last = br.take(1);
+    const type = br.take(2);
+    if (type === 0) {
+      // stored block
+      br.align();
+      const len = br.take(16);
+      const nlen = br.take(16);
+      if ((len ^ 0xffff) !== nlen) throw zipError('deflate 数据损坏（stored block 长度不匹配）');
+      reserve(len);
+      br.readBytes(out, op, len);
+      op += len;
+    } else if (type === 3) {
+      throw zipError('deflate 数据损坏（非法 block type）');
+    } else {
+      let lit;
+      let dist;
+      if (type === 1) {
+        const t = fixedTables();
+        lit = t.lit;
+        dist = t.dist;
+      } else {
+        const hlit = br.take(5) + 257;
+        const hdist = br.take(5) + 1;
+        const hclen = br.take(4) + 4;
+        const clLengths = new Uint8Array(19);
+        for (let i = 0; i < hclen; i++) clLengths[CODE_LENGTH_ORDER[i]] = br.take(3);
+        const clh = buildHuffman(clLengths, 19);
+        const lengths = new Uint8Array(hlit + hdist);
+        let i = 0;
+        const totalCodes = hlit + hdist;
+        while (i < totalCodes) {
+          const sym = decodeSym(clh, br);
+          if (sym < 16) lengths[i++] = sym;
+          else {
+            let repeat;
+            let value = 0;
+            if (sym === 16) {
+              if (i === 0) throw zipError('deflate 数据损坏（重复码长度但无前值）');
+              value = lengths[i - 1];
+              repeat = 3 + br.take(2);
+            } else if (sym === 17) repeat = 3 + br.take(3);
+            else repeat = 11 + br.take(7);
+            if (i + repeat > totalCodes) throw zipError('deflate 数据损坏（码长度重复越界）');
+            while (repeat--) lengths[i++] = value;
+          }
+        }
+        lit = buildHuffman(lengths.subarray(0, hlit), hlit);
+        dist = buildHuffman(lengths.subarray(hlit), hdist);
+      }
+      for (;;) {
+        const sym = decodeSym(lit, br);
+        if (sym < 256) {
+          reserve(1);
+          out[op++] = sym;
+        } else if (sym === 256) {
+          break;
+        } else {
+          const li = sym - 257;
+          if (li >= 29) throw zipError('deflate 数据损坏（非法长度符号）');
+          const len = LEN_BASE[li] + br.take(LEN_EXTRA[li]);
+          const dsym = decodeSym(dist, br);
+          if (dsym >= 30) throw zipError('deflate 数据损坏（非法距离符号）');
+          const d = DIST_BASE[dsym] + br.take(DIST_EXTRA[dsym]);
+          if (d > op) throw zipError('deflate 数据损坏（距离超出已解压长度）');
+          reserve(len);
+          let from = op - d;
+          for (let k = 0; k < len; k++) out[op++] = out[from++];
+        }
+      }
+    }
+  }
+  return op === out.length ? out : out.subarray(0, op);
+}
+
+/* ==========================================================================
+ * 3. 压缩（写入用，异步）
+ * ========================================================================== */
+
+async function streamThrough(transform, bytes) {
+  const writePromise = (async () => {
+    const writer = transform.writable.getWriter();
+    await writer.write(bytes);
+    await writer.close();
+  })();
+  const chunks = [];
+  const reader = transform.readable.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) chunks.push(value);
+  }
+  await writePromise;
+  return concatBytes(chunks);
+}
+
+async function nativeDeflateRaw(bytes) {
+  if (typeof CompressionStream !== 'function') return null;
+  return streamThrough(new CompressionStream('deflate-raw'), bytes);
+}
+
+async function nativeInflateRaw(bytes) {
+  if (typeof DecompressionStream !== 'function') return null;
+  return streamThrough(new DecompressionStream('deflate-raw'), bytes);
+}
+
+/**
+ * 尽力做 raw deflate 压缩。
+ * @returns {Promise<Uint8Array|null>} 环境不支持时返回 null（调用方应退化为 store）
+ */
+async function deflateRaw(bytes) {
+  const buf = toBytes(bytes);
+  try {
+    const native = await nativeDeflateRaw(buf);
+    if (native && native.length) return native;
+  } catch {
+    /* 继续尝试下一种后端 */
+  }
+  if (isNode()) {
+    try {
+      // 仅在 Node 下动态引入，浏览器打包/运行都不会碰到这行
+      const zlib = await import('node:zlib');
+      const raw = zlib.deflateRawSync ? zlib.deflateRawSync(buf) : null;
+      if (raw && raw.length) return new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
+    } catch {
+      /* 忽略 */
+    }
+  }
+  return null;
+}
+
+async function inflateEntryData(method, raw, sizeHint, options) {
+  if (method === 0) return raw;
+  if (method !== 8) throw zipError(`不支持的压缩方法 ${method}（本工具只支持 0 = store / 8 = deflate）`);
+  const mode = options.inflate || 'auto';
+  let nativeError = null;
+  if (mode !== 'js') {
+    try {
+      const native = await nativeInflateRaw(raw);
+      if (native) return native;
+    } catch (err) {
+      nativeError = err;
+    }
+  }
+  let jsError = null;
+  try {
+    return inflateRaw(raw, sizeHint);
+  } catch (err) {
+    jsError = err;
+  }
+  if (isNode()) {
+    try {
+      const zlib = await import('node:zlib');
+      if (zlib.inflateRawSync) {
+        const buf = zlib.inflateRawSync(raw);
+        return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+      }
+    } catch {
+      /* 忽略，抛下面的错 */
+    }
+  }
+  throw zipError(`解压失败（method 8）：${(jsError || nativeError || new Error('unknown')).message}`);
+}
+
+/* ==========================================================================
+ * 4. 输入源：Uint8Array / ArrayBuffer / Blob / File / 自定义 {size, read}
+ * ========================================================================== */
+
+/**
+ * 把一个随机可读的字节源包装成 openZip 接受的 source。
+ * 网页里直接传 File 也行（内部按需 slice，不会一次性读 80MB）。
+ */
+function sourceFromBytes(bytes) {
+  const buf = toBytes(bytes);
+  return {
+    size: buf.length,
+    readSync: (offset, length) => buf.subarray(offset, Math.min(buf.length, offset + length)),
+    read: async (offset, length) => buf.subarray(offset, Math.min(buf.length, offset + length)),
+    buffer: buf,
+  };
+}
+
+function sourceFromBlob(blob) {
+  if (!blob || typeof blob.slice !== 'function') throw zipError('sourceFromBlob 需要一个 Blob/File');
+  return {
+    size: blob.size,
+    read: async (offset, length) => {
+      const end = Math.min(blob.size, offset + length);
+      const slice = blob.slice(offset, end);
+      const ab = await slice.arrayBuffer();
+      return new Uint8Array(ab);
+    },
+  };
+}
+
+function normalizeSource(src) {
+  if (src == null) throw zipError('openZip 需要 zip 字节或字节源');
+  if (typeof src === 'string') {
+    throw zipError('不接受字符串路径，请先读成 Uint8Array / ArrayBuffer，或传 File/Blob');
+  }
+  if (src instanceof Uint8Array || src instanceof ArrayBuffer || ArrayBuffer.isView(src)) {
+    return sourceFromBytes(src);
+  }
+  if (typeof src.read === 'function' && typeof src.size === 'number') return src;
+  if (typeof src.arrayBuffer === 'function' || typeof src.slice === 'function') return sourceFromBlob(src);
+  throw zipError('无法识别的输入源（需要 Uint8Array / ArrayBuffer / Blob / File / {size, read}）');
+}
+
+async function readAt(src, offset, length) {
+  if (offset < 0 || length < 0) throw zipError(`越界读取 offset=${offset} length=${length}`);
+  if (offset + length > src.size) {
+    length = Math.max(0, src.size - offset);
+  }
+  if (typeof src.readSync === 'function') return src.readSync(offset, length);
+  return src.read(offset, length);
+}
+
+function readAtSync(src, offset, length) {
+  if (typeof src.readSync !== 'function') throw zipError('该字节源不支持同步读取');
+  return src.readSync(offset, Math.min(length, src.size - offset));
+}
+
+/* ==========================================================================
+ * 5. EOCD / central directory 解析
+ * ========================================================================== */
+
+async function findEocd(src) {
+  const size = src.size;
+  if (size < 22) throw zipError('文件太小，不是 zip');
+  const tailLen = Math.min(size, 22 + MAX16);
+  const base = size - tailLen;
+  const tail = await readAt(src, base, tailLen);
+  const sig = [0x50, 0x4b, 0x05, 0x06];
+  for (let i = tailLen - 22; i >= 0; i--) {
+    if (tail[i] !== 0x50 || tail[i + 1] !== 0x4b) continue;
+    if (!has(tail, sig, i)) continue;
+    const commentLen = u16(tail, i + 20);
+    if (i + 22 + commentLen > tailLen) continue;
+    return { eocdOffset: base + i, tail, at: i };
+  }
+  throw zipError('找不到 EOCD 记录（可能不是 zip，或文件被截断）');
+}
+
+async function readZip64Eocd(src, eocdOffset) {
+  if (eocdOffset < 20) throw zipError('ZIP64 locator 位置非法');
+  const locator = await readAt(src, eocdOffset - 20, 20);
+  if (u32(locator, 0) !== SIG_EOCD64_LOCATOR) throw zipError('ZIP64 EOCD locator 缺失');
+  const eocd64Offset = u64(locator, 8);
+  const rec = await readAt(src, eocd64Offset, 56);
+  if (u32(rec, 0) !== SIG_EOCD64) throw zipError('ZIP64 EOCD 记录缺失');
+  return {
+    count: u64(rec, 32),
+    cdSize: u64(rec, 40),
+    cdOffset: u64(rec, 48),
+  };
+}
+
+function parseExtraFields(extra) {
+  const fields = [];
+  let p = 0;
+  while (p + 4 <= extra.length) {
+    const id = u16(extra, p);
+    const size = u16(extra, p + 2);
+    const end = Math.min(extra.length, p + 4 + size);
+    fields.push({ id, body: extra.subarray(p + 4, end) });
+    p += 4 + size;
+  }
+  return fields;
+}
+
+function applyZip64Extra(entry, fields) {
+  for (const field of fields) {
+    if (field.id !== 0x0001) continue;
+    const body = field.body;
+    let q = 0;
+    if (entry.uncompressedSize === MAX32 && q + 8 <= body.length) {
+      entry.uncompressedSize = u64(body, q);
+      q += 8;
+    }
+    if (entry.compressedSize === MAX32 && q + 8 <= body.length) {
+      entry.compressedSize = u64(body, q);
+      q += 8;
+    }
+    if (entry.localHeaderOffset === MAX32 && q + 8 <= body.length) {
+      entry.localHeaderOffset = u64(body, q);
+      q += 8;
+    }
+    if (entry.diskStart === MAX16 && q + 4 <= body.length) entry.diskStart = u32(body, q);
+    break;
+  }
+}
+
+function makeEntry(raw, index) {
+  const path = raw.path.replace(/\\/g, '/').replace(/^\.\//, '');
+  const entry = {
+    index,
+    path,
+    rawPath: raw.path,
+    name: path,
+    isDirectory: path.endsWith('/'),
+    method: raw.method,
+    flags: raw.flags,
+    utf8: (raw.flags & FLAG_UTF8) !== 0,
+    crc32: raw.crc32,
+    compressedSize: raw.compressedSize,
+    uncompressedSize: raw.uncompressedSize,
+    /** @deprecated 兼容别名 */
+    size: raw.uncompressedSize,
+    localHeaderOffset: raw.localHeaderOffset,
+    versionNeeded: raw.versionNeeded,
+    versionMadeBy: raw.versionMadeBy,
+    dosTime: raw.dosTime,
+    dosDate: raw.dosDate,
+    internalAttributes: raw.internalAttributes,
+    externalAttributes: raw.externalAttributes,
+    extra: raw.extra,
+    comment: raw.comment,
+    lastMod: dosToDate(raw.dosDate, raw.dosTime),
+    get dataOffset() {
+      return this._dataOffset;
+    },
+  };
+  return entry;
+}
+
+function dosToDate(dosDate, dosTime) {
+  if (!dosDate && !dosTime) return null;
+  const day = dosDate & 31;
+  const month = (dosDate >> 5) & 15;
+  const year = ((dosDate >> 9) & 127) + 1980;
+  const sec = (dosTime & 31) * 2;
+  const min = (dosTime >> 5) & 63;
+  const hour = (dosTime >> 11) & 31;
+  if (month < 1 || month > 12 || day < 1) return null;
+  const d = new Date(year, month - 1, day, hour, min, sec);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+async function readCentralDirectory(src, eocdInfo) {
+  const { tail, at, eocdOffset } = eocdInfo;
+  let count = u16(tail, at + 10);
+  let cdSize = u32(tail, at + 12);
+  let cdOffset = u32(tail, at + 16);
+  const commentLen = u16(tail, at + 20);
+  const diskNo = u16(tail, at + 4);
+  const cdDisk = u16(tail, at + 6);
+  const diskCount = u16(tail, at + 8);
+
+  let zip64 = false;
+  if (count === MAX16 || cdSize === MAX32 || cdOffset === MAX32 || diskCount === MAX16) {
+    const z64 = await readZip64Eocd(src, eocdOffset);
+    count = z64.count;
+    cdSize = z64.cdSize;
+    cdOffset = z64.cdOffset;
+    zip64 = true;
+  }
+  if (diskNo !== 0 || cdDisk !== 0) throw zipError('不支持分卷 zip');
+
+  if (cdOffset + cdSize > src.size) throw zipError('central directory 越界（zip 被截断？）');
+
+  const cd = await readAt(src, cdOffset, cdSize);
+  const entries = [];
+  let p = 0;
+  for (let i = 0; i < count; i++) {
+    if (p + 46 > cd.length) throw zipError(`central directory 提前结束（第 ${i} 条）`);
+    if (u32(cd, p) !== SIG_CENTRAL) throw zipError(`central directory 签名错误（第 ${i} 条，offset ${p}）`);
+    const versionMadeBy = u16(cd, p + 4);
+    const versionNeeded = u16(cd, p + 6);
+    const flags = u16(cd, p + 8);
+    const method = u16(cd, p + 10);
+    const dosTime = u16(cd, p + 12);
+    const dosDate = u16(cd, p + 14);
+    const crc = u32(cd, p + 16);
+    const compressedSize = u32(cd, p + 20);
+    const uncompressedSize = u32(cd, p + 24);
+    const nameLen = u16(cd, p + 28);
+    const extraLen = u16(cd, p + 30);
+    const commentLen2 = u16(cd, p + 32);
+    const diskStart = u16(cd, p + 34);
+    const internalAttributes = u16(cd, p + 36);
+    const externalAttributes = u32(cd, p + 38);
+    const localHeaderOffset = u32(cd, p + 42);
+    const nameStart = p + 46;
+    const nameBytes = cd.subarray(nameStart, nameStart + nameLen);
+    const extra = cd.subarray(nameStart + nameLen, nameStart + nameLen + extraLen);
+    const comment = cd.subarray(nameStart + nameLen + extraLen, nameStart + nameLen + extraLen + commentLen2);
+    p = nameStart + nameLen + extraLen + commentLen2;
+
+    const entry = {
+      path: decodeUtf8(nameBytes),
+      rawPathBytes: nameBytes,
+      flags,
+      method,
+      crc32: crc,
+      compressedSize,
+      uncompressedSize,
+      localHeaderOffset,
+      diskStart,
+      versionNeeded,
+      versionMadeBy,
+      dosTime,
+      dosDate,
+      internalAttributes,
+      externalAttributes,
+      extra,
+      comment: decodeUtf8(comment),
+    };
+    const fields = parseExtraFields(extra);
+    applyZip64Extra(entry, fields);
+    entry.extraFields = fields;
+    if (entry.diskStart !== 0) throw zipError('不支持分卷 zip（diskStart != 0）');
+    entries.push(makeEntry(entry, i));
+  }
+
+  return {
+    entries,
+    comment: decodeUtf8(tail.subarray(at + 22, at + 22 + commentLen)),
+    zip64,
+    cdOffset,
+    cdSize,
+    declaredCount: count,
+    fieldsLoaded: entries.length,
+  };
+}
+
+/* ==========================================================================
+ * 6. openZip —— 两段式读取（建索引 → 按需解压）
+ * ========================================================================== */
+
+/**
+ * 打开 zip，只解析索引，不解压任何数据。
+ * @param {Uint8Array|ArrayBuffer|Blob|File|{size:number,read:Function}} source
+ * @param {{inflate?: 'auto'|'js'|'native', verifyCrc?: boolean, encoding?: string}} [options]
+ * @returns {Promise<ZipArchive>}
+ */
+async function openZip(source, options = {}) {
+  const src = normalizeSource(source);
+  const eocdInfo = await findEocd(src);
+  const dir = await readCentralDirectory(src, eocdInfo);
+  const byPath = new Map();
+  for (const entry of dir.entries) byPath.set(entry.path, entry);
+
+  const stats = { count: dir.entries.length, files: 0, directories: 0, uncompressedSize: 0, compressedSize: 0 };
+  for (const e of dir.entries) {
+    if (e.isDirectory) stats.directories++;
+    else stats.files++;
+    stats.uncompressedSize += e.uncompressedSize;
+    stats.compressedSize += e.compressedSize;
+  }
+
+  const opts = {
+    inflate: options.inflate || 'auto',
+    verifyCrc: options.verifyCrc !== false,
+    encoding: options.encoding || 'utf-8',
+  };
+
+  /** 读取单条目的原始（压缩态）字节，不解压 */
+  async function readRaw(entryOrPath) {
+    const entry = resolveEntry(entryOrPath);
+    if (entry.isDirectory) {
+      entry._dataOffset = entry.localHeaderOffset + 30;
+      return EMPTY;
+    }
+    const local = await readAt(src, entry.localHeaderOffset, 30);
+    if (local.length < 30 || u32(local, 0) !== SIG_LOCAL) {
+      throw zipError(`本地文件头损坏: ${entry.path}`);
+    }
+    const nameLen = u16(local, 26);
+    const extraLen = u16(local, 28);
+    const dataOffset = entry.localHeaderOffset + 30 + nameLen + extraLen;
+    entry._dataOffset = dataOffset;
+
+    let csize = entry.compressedSize;
+    if (csize === 0 && entry.uncompressedSize === 0 && entry.flags & FLAG_DESCRIPTOR) {
+      const resolved = resolveDescriptorSizes(src, entry, dataOffset);
+      if (resolved) {
+        entry.compressedSize = resolved.compressedSize;
+        entry.uncompressedSize = resolved.uncompressedSize;
+        entry.crc32 = resolved.crc32;
+        entry.size = resolved.uncompressedSize;
+        csize = resolved.compressedSize;
+      }
+    }
+    if (csize === 0) return EMPTY;
+    return readAt(src, dataOffset, csize);
+  }
+
+  /** 读并解压单个条目 */
+  async function readEntry(entryOrPath, readOptions) {
+    const entry = resolveEntry(entryOrPath);
+    if (entry.isDirectory) return EMPTY;
+    const raw = await readRaw(entry);
+    const data = await inflateEntryData(entry.method, raw, entry.uncompressedSize, { ...opts, ...readOptions });
+    if (opts.verifyCrc && entry.crc32 !== 0 && crc32(data) !== entry.crc32) {
+      // native 后端可能因为环境怪异产出坏数据：auto 模式下再用纯 JS 兜一次
+      if (entry.method === 8 && opts.inflate === 'auto') {
+        const retry = await inflateEntryData(entry.method, raw, entry.uncompressedSize, { ...opts, inflate: 'js', ...readOptions });
+        if (crc32(retry) === entry.crc32) return retry;
+      }
+      throw zipError(`CRC32 校验失败: ${entry.path}（zip 可能已损坏）`);
+    }
+    if (entry.uncompressedSize && data.length !== entry.uncompressedSize) {
+      throw zipError(`解压大小不符: ${entry.path}（期望 ${entry.uncompressedSize}，实际 ${data.length}）`);
+    }
+    return data;
+  }
+
+  function resolveEntry(entryOrPath) {
+    if (entryOrPath == null) throw zipError('entry 为空');
+    if (typeof entryOrPath === 'string') {
+      const norm = entryOrPath.replace(/\\/g, '/').replace(/^\.\//, '');
+      const found = byPath.get(norm);
+      if (!found) throw zipError(`zip 里没有这个条目: ${entryOrPath}`);
+      return found;
+    }
+    if (typeof entryOrPath === 'object') {
+      if (typeof entryOrPath.path === 'string' && entryOrPath.path && entryOrPath.method !== undefined) return entryOrPath;
+      if (entryOrPath.entry) return resolveEntry(entryOrPath.entry);
+      if (typeof entryOrPath.path === 'string') return resolveEntry(entryOrPath.path);
+    }
+    throw zipError('无法识别的 entry 参数');
+  }
+
+  const archive = {
+    source: src,
+    size: src.size,
+    entries: dir.entries,
+    comment: dir.comment,
+    zip64: dir.zip64,
+    centralDirectoryOffset: dir.cdOffset,
+    centralDirectorySize: dir.cdSize,
+    stats,
+    has(path) {
+      const norm = String(path).replace(/\\/g, '/').replace(/^\.\//, '');
+      return byPath.has(norm);
+    },
+    get(path) {
+      const norm = String(path).replace(/\\/g, '/').replace(/^\.\//, '');
+      return byPath.get(norm) || null;
+    },
+    readEntry,
+    read: (path, readOptions) => readEntry(path, readOptions),
+    readRaw,
+    async text(path, readOptions) {
+      return decodeUtf8(await readEntry(path, readOptions));
+    },
+    async json(path, readOptions) {
+      return JSON.parse(decodeUtf8(await readEntry(path, readOptions)));
+    },
+    /** 按路径前缀/正则找条目 */
+    find(pattern) {
+      const test =
+        typeof pattern === 'function'
+          ? pattern
+          : pattern instanceof RegExp
+            ? (e) => pattern.test(e.path)
+            : (e) => e.path.startsWith(String(pattern));
+      return dir.entries.filter(test);
+    },
+    close() {
+      /* 无句柄需要释放；保留方法方便页面统一调用 */
+    },
+  };
+  return archive;
+}
+
+/** CD 里没给尺寸（流式写入的 zip）时，用数据描述符或下一个本地头兜底 */
+function resolveDescriptorSizes(src, entry, dataOffset) {
+  if (typeof src.readSync !== 'function') return null;
+  const window = Math.min(src.size - dataOffset, 1024 * 1024);
+  if (window <= 0) return null;
+  const buf = readAtSync(src, dataOffset, window);
+  for (let i = 0; i + 16 <= buf.length; i++) {
+    if (u32(buf, i) === SIG_DATA_DESCRIPTOR) {
+      return { crc32: u32(buf, i + 4), compressedSize: u32(buf, i + 8), uncompressedSize: u32(buf, i + 12) };
+    }
+    if (u32(buf, i) === SIG_LOCAL) break;
+  }
+  return null;
+}
+
+/* ==========================================================================
+ * 7. 过滤 + 批量读取
+ * ========================================================================== */
+
+/**
+ * 生成 filter 函数。支持：
+ *   makeFilter()                                  → 全要
+ *   makeFilter('/\.json$/')                       → 字符串当正则源码
+ *   makeFilter(/\.json$/)                         → 正则
+ *   makeFilter('chat_sessions/')                  → 前缀
+ *   makeFilter((entry) => ...)                    → 谓词
+ *   makeFilter(['a/', /\.json$/])                 → 任一命中
+ *   makeFilter({ include: [...], exclude: [...] })→ 先包含后排除
+ */
+function makeFilter(spec) {
+  if (spec == null) return () => true;
+  if (typeof spec === 'function') return spec;
+  if (spec instanceof RegExp) return (e) => spec.test(e.path);
+  if (typeof spec === 'string') {
+    if (spec.length > 2 && spec.startsWith('/') && spec.lastIndexOf('/') > 0) {
+      const end = spec.lastIndexOf('/');
+      const re = new RegExp(spec.slice(1, end), spec.slice(end + 1));
+      return (e) => re.test(e.path);
+    }
+    return (e) => e.path.startsWith(spec);
+  }
+  if (Array.isArray(spec)) {
+    const subs = spec.map(makeFilter);
+    return (e) => subs.some((f) => f(e));
+  }
+  if (typeof spec === 'object') {
+    const include = spec.include != null ? makeFilter(spec.include) : null;
+    const exclude = spec.exclude != null ? makeFilter(spec.exclude) : null;
+    return (e) => (!include || include(e)) && !(exclude && exclude(e));
+  }
+  throw zipError('无法识别的 filter');
+}
+
+/**
+ * 逐条解压（异步生成器），每次只驻留一个条目的解压结果。
+ * for await (const { path, data } of iterateZip(file, { filter: /\.json$/ })) { ... }
+ */
+async function* iterateZip(source, options = {}) {
+  const zip = await openZip(source, options);
+  const filter = makeFilter(options.filter);
+  let index = 0;
+  for (const entry of zip.entries) {
+    if (!filter(entry)) continue;
+    if (options.signal && options.signal.aborted) {
+      const err = new Error('zipkit: 已取消');
+      err.name = 'AbortError';
+      throw err;
+    }
+    const data = entry.isDirectory ? EMPTY : await zip.readEntry(entry, options);
+    if (entry.isDirectory) {
+      yield { entry, path: entry.path, data: EMPTY, index: index++, isDirectory: true };
+    } else {
+      yield { entry, path: entry.path, data, index: index++ };
+    }
+  }
+}
+
+/**
+ * 批量读（可只读一部分）。默认不保留全量数据，只通过 onEntry 回调交出去。
+ * @param {*} source
+ * @param {{filter?: *, onEntry?: Function, collect?: boolean, signal?: AbortSignal, inflate?: string, verifyCrc?: boolean}} [options]
+ * @returns {Promise<{entries: Array, extracted: number, bytes: number, files: Map|null, zip: object}>}
+ */
+async function readZip(source, options = {}) {
+  const zip = await openZip(source, options);
+  const filter = makeFilter(options.filter);
+  const collect = options.collect === true || options.keep === true || !!options.files;
+  const files = collect ? new Map() : null;
+  let extracted = 0;
+  let bytes = 0;
+  const skipped = [];
+  for (const entry of zip.entries) {
+    if (!filter(entry)) {
+      skipped.push(entry.path);
+      continue;
+    }
+    if (options.signal && options.signal.aborted) {
+      const err = new Error('zipkit: 已取消');
+      err.name = 'AbortError';
+      throw err;
+    }
+    const data = entry.isDirectory ? EMPTY : await zip.readEntry(entry, options);
+    bytes += data.length;
+    if (files) files.set(entry.path, data);
+    if (options.onEntry) {
+      await options.onEntry({ entry, path: entry.path, data, index: extracted, isDirectory: entry.isDirectory });
+    }
+    extracted++;
+  }
+  return { entries: zip.entries, total: zip.entries.length, extracted, bytes, files, skipped, zip };
+}
+
+/** 小 zip 一把梭：返回 Map<path, Uint8Array> */
+async function unzip(source, filter) {
+  const res = await readZip(source, { filter, collect: true });
+  return res.files;
+}
+
+/* ==========================================================================
+ * 8. writeZip
+ * ========================================================================== */
+
+class ByteWriter {
+  constructor(size) {
+    this.buf = new Uint8Array(size);
+    this.pos = 0;
+  }
+  u8(v) {
+    this.buf[this.pos++] = v & 0xff;
+  }
+  u16(v) {
+    this.buf[this.pos++] = v & 0xff;
+    this.buf[this.pos++] = (v >>> 8) & 0xff;
+  }
+  u32(v) {
+    const n = v >>> 0;
+    this.buf[this.pos++] = n & 0xff;
+    this.buf[this.pos++] = (n >>> 8) & 0xff;
+    this.buf[this.pos++] = (n >>> 16) & 0xff;
+    this.buf[this.pos++] = (n >>> 24) & 0xff;
+  }
+  u64(v) {
+    const lo = v % 4294967296;
+    const hi = Math.floor(v / 4294967296);
+    this.u32(lo >>> 0);
+    this.u32(hi >>> 0);
+  }
+  bytes(arr) {
+    this.buf.set(arr, this.pos);
+    this.pos += arr.length;
+  }
+  skip(n) {
+    this.pos += n;
+  }
+}
+
+function normalizeEntryList(entries) {
+  if (entries == null) throw zipError('writeZip 需要 entries 数组');
+  if (Array.isArray(entries)) return entries;
+  if (entries instanceof Map) return [...entries].map(([path, data]) => ({ path, data }));
+  if (typeof entries === 'object') {
+    return Object.keys(entries).map((path) => ({ path, data: entries[path] }));
+  }
+  throw zipError('writeZip 的 entries 必须是数组 / Map / {path: data}');
+}
+
+function dosDateTime(date) {
+  const d = date instanceof Date && !Number.isNaN(date.getTime()) ? date : new Date(2020, 0, 1, 0, 0, 0);
+  const year = Math.max(1980, Math.min(2107, d.getFullYear()));
+  const dosTime = (d.getHours() << 11) | (d.getMinutes() << 5) | (Math.floor(d.getSeconds() / 2) & 31);
+  const dosDate = ((year - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  return { dosTime, dosDate };
+}
+
+/**
+ * 生成 zip。
+ * @param {Array<{path:string, data:*, deflate?:boolean, lastMod?:Date}>|Map|Object} entries
+ *        条目顺序 = 传入顺序（写入 local header 的顺序与 central directory 一致）
+ * @param {{
+ *   deflate?: boolean,          // 全局默认（默认 true = auto：压得动就压）
+ *   zip64?: 'auto'|'always',    // 'always' 强制 ZIP64（测试用）
+ *   date?: Date,                // 默认时间戳（不传则用条目 lastMod，再退 2020-01-01）
+ *   compressor?: (bytes:Uint8Array)=>Promise<Uint8Array|null>|Uint8Array|null  // 注入压缩后端（测试里用 zlib.deflateRawSync）
+ * }} [options]
+ * @returns {Promise<Uint8Array>}
+ */
+async function writeZip(entries, options = {}) {
+  const list = normalizeEntryList(entries);
+  const globalDeflate = options.deflate === false ? 'store' : options.deflate === true ? 'force' : 'auto';
+  const forceZip64 = options.zip64 === 'always';
+  const defaultDate = options.date instanceof Date ? options.date : null;
+  const compressor = typeof options.compressor === 'function' ? options.compressor : null;
+
+  /* ---- 1) 预处理：编码、CRC、压缩 ---- */
+  const prepared = [];
+  for (const item of list) {
+    if (!item || typeof item !== 'object') throw zipError('entries 里每项必须是对象 {path, data}');
+    let path = String(item.path ?? item.name ?? '');
+    if (!path) throw zipError('entries 里某项缺少 path');
+    const isDirectory = item.isDirectory != null ? !!item.isDirectory : path.endsWith('/');
+    if (isDirectory && !path.endsWith('/')) path += '/';
+    const data = isDirectory ? EMPTY : toBytes(item.data);
+    const want =
+      item.deflate == null ? globalDeflate : item.deflate === false ? 'store' : item.deflate === true ? 'force' : 'auto';
+
+    let method = 0;
+    let payload = data;
+    if (!isDirectory && want !== 'store' && data.length > 0) {
+      let packed = null;
+      try {
+        packed = compressor ? await compressor(data) : await deflateRaw(data);
+      } catch {
+        packed = null;
+      }
+      if (packed && packed.length) {
+        if (want === 'force' || packed.length < data.length) {
+          method = 8;
+          payload = packed;
+        }
+      }
+    }
+
+    const nameBytes = encodeUtf8(path);
+    const { dosTime, dosDate } = dosDateTime(item.lastMod instanceof Date ? item.lastMod : defaultDate);
+    prepared.push({
+      path,
+      nameBytes,
+      isDirectory,
+      method,
+      payload,
+      size: data.length,
+      crc: crc32(data),
+      dosTime,
+      dosDate,
+      commentBytes: item.comment ? encodeUtf8(String(item.comment)) : EMPTY,
+    });
+  }
+
+  /* ---- 2) 计算布局（含 ZIP64 判定） ---- */
+  let offset = 0;
+  for (const e of prepared) {
+    const bigSize = forceZip64 || e.size >= MAX32 || e.payload.length >= MAX32;
+    const bigOffset = forceZip64 || offset >= MAX32;
+    e.zip64Size = bigSize;
+    e.zip64Offset = bigOffset;
+    e.localExtraLen = bigSize ? 20 : 0;
+    e.localOffset = offset;
+    offset += 30 + e.nameBytes.length + e.localExtraLen + e.payload.length;
+    e.cdExtraLen = bigSize || bigOffset ? 4 + (bigSize ? 16 : 0) + (bigOffset ? 8 : 0) : 0;
+  }
+  const cdOffset = offset;
+  let cdSize = 0;
+  for (const e of prepared) cdSize += 46 + e.nameBytes.length + e.cdExtraLen + e.commentBytes.length;
+  const count = prepared.length;
+  const needEocd64 = forceZip64 || count > MAX16 || cdSize >= MAX32 || cdOffset >= MAX32;
+  const totalSize = cdOffset + cdSize + (needEocd64 ? 56 + 20 : 0) + 22;
+
+  /* ---- 3) 写本地文件头 + 数据 ---- */
+  const w = new ByteWriter(totalSize);
+  const VERSION_NEEDED = 20;
+  const VERSION_NEEDED_ZIP64 = 45;
+  const VERSION_MADE_BY = (3 << 8) | 45; // unix / 4.5
+
+  for (const e of prepared) {
+    const versionNeeded = e.zip64Size ? VERSION_NEEDED_ZIP64 : VERSION_NEEDED;
+    w.u32(SIG_LOCAL);
+    w.u16(versionNeeded);
+    w.u16(FLAG_UTF8); // bit 11：文件名 UTF-8
+    w.u16(e.method);
+    w.u16(e.dosTime);
+    w.u16(e.dosDate);
+    w.u32(e.crc);
+    w.u32(e.zip64Size ? MAX32 : e.payload.length);
+    w.u32(e.zip64Size ? MAX32 : e.size);
+    w.u16(e.nameBytes.length);
+    w.u16(e.localExtraLen);
+    w.bytes(e.nameBytes);
+    if (e.zip64Size) {
+      w.u16(0x0001);
+      w.u16(16);
+      w.u64(e.size);
+      w.u64(e.payload.length);
+    }
+    w.bytes(e.payload);
+  }
+
+  /* ---- 4) central directory ---- */
+  const cdStart = w.pos;
+  if (cdStart !== cdOffset) throw zipError(`内部布局计算错误（期望 ${cdOffset}，实际 ${cdStart}）`);
+  for (const e of prepared) {
+    const versionNeeded = e.zip64Size || e.zip64Offset ? VERSION_NEEDED_ZIP64 : VERSION_NEEDED;
+    const external = e.isDirectory ? 0x41ed0010 : 0x81a40000; // 0o40755 / 0o100644 + MS-DOS 目录位
+    w.u32(SIG_CENTRAL);
+    w.u16(VERSION_MADE_BY);
+    w.u16(versionNeeded);
+    w.u16(FLAG_UTF8);
+    w.u16(e.method);
+    w.u16(e.dosTime);
+    w.u16(e.dosDate);
+    w.u32(e.crc);
+    w.u32(e.zip64Size ? MAX32 : e.payload.length);
+    w.u32(e.zip64Size ? MAX32 : e.size);
+    w.u16(e.nameBytes.length);
+    w.u16(e.cdExtraLen);
+    w.u16(e.commentBytes.length);
+    w.u16(0); // disk start
+    w.u16(0); // internal attrs
+    w.u32(external);
+    w.u32(e.zip64Offset ? MAX32 : e.localOffset);
+    w.bytes(e.nameBytes);
+    if (e.cdExtraLen) {
+      w.u16(0x0001);
+      w.u16(e.cdExtraLen - 4);
+      if (e.zip64Size) {
+        w.u64(e.size);
+        w.u64(e.payload.length);
+      }
+      if (e.zip64Offset) w.u64(e.localOffset);
+    }
+    w.bytes(e.commentBytes);
+  }
+  const cdEnd = w.pos;
+  if (cdEnd - cdStart !== cdSize) throw zipError(`内部布局计算错误（CD 大小 ${cdEnd - cdStart} != ${cdSize}）`);
+
+  /* ---- 5) ZIP64 EOCD + locator + EOCD ---- */
+  if (needEocd64) {
+    const eocd64Offset = w.pos;
+    w.u32(SIG_EOCD64);
+    w.u64(44); // 本记录剩余字节数
+    w.u16(VERSION_MADE_BY);
+    w.u16(VERSION_NEEDED_ZIP64);
+    w.u32(0); // disk
+    w.u32(0); // cd disk
+    w.u64(count);
+    w.u64(count);
+    w.u64(cdSize);
+    w.u64(cdOffset);
+    w.u32(SIG_EOCD64_LOCATOR);
+    w.u32(0);
+    w.u64(eocd64Offset);
+    w.u32(1);
+  }
+  w.u32(SIG_EOCD);
+  w.u16(0);
+  w.u16(0);
+  w.u16(needEocd64 ? MAX16 : count);
+  w.u16(needEocd64 ? MAX16 : count);
+  w.u32(needEocd64 ? MAX32 : cdSize);
+  w.u32(needEocd64 ? MAX32 : cdOffset);
+  w.u16(0); // comment length
+
+  if (w.pos !== totalSize) throw zipError(`内部布局计算错误（总大小 ${w.pos} != ${totalSize}）`);
+  return w.buf;
+}
+
+/** 生成 Blob（直接给 <a download> 用）。浏览器与 Node 18+ 都有 Blob。 */
+async function writeZipBlob(entries, options = {}, mime = 'application/zip') {
+  const data = await writeZip(entries, options);
+  return new Blob([data], { type: mime });
+}
+
+/* ==========================================================================
+ * 9. SHA-256（Chatbox manifest 需要每个会话文件的 checksum；crypto.subtle 不可用时兜底）
+ * ========================================================================== */
+
+const SHA256_K = new Uint32Array([
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98,
+  0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
+  0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8,
+  0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+  0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819,
+  0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a,
+  0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+  0xc67178f2,
+]);
+
+/** 纯 JS SHA-256 → 小写 hex，与 crypto.subtle 的 'SHA-256' 结果一致 */
+function sha256Hex(bytes) {
+  const data = toBytes(bytes);
+  const bitLen = data.length * 8;
+  const withPad = new Uint8Array(((data.length + 9 + 63) >> 6) << 6);
+  withPad.set(data);
+  withPad[data.length] = 0x80;
+  const dv = new DataView(withPad.buffer);
+  dv.setUint32(withPad.length - 8, Math.floor(bitLen / 4294967296));
+  dv.setUint32(withPad.length - 4, bitLen >>> 0);
+
+  const H = new Uint32Array([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
+  const W = new Uint32Array(64);
+  const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+  for (let offset = 0; offset < withPad.length; offset += 64) {
+    for (let i = 0; i < 16; i++) W[i] = dv.getUint32(offset + i * 4);
+    for (let i = 16; i < 64; i++) {
+      const s0 = rotr(W[i - 15], 7) ^ rotr(W[i - 15], 18) ^ (W[i - 15] >>> 3);
+      const s1 = rotr(W[i - 2], 17) ^ rotr(W[i - 2], 19) ^ (W[i - 2] >>> 10);
+      W[i] = (W[i - 16] + s0 + W[i - 7] + s1) >>> 0;
+    }
+    let [a, b, c, d, e, f, g, h] = H;
+    for (let i = 0; i < 64; i++) {
+      const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+      const ch = (e & f) ^ (~e & g);
+      const t1 = (h + S1 + ch + SHA256_K[i] + W[i]) >>> 0;
+      const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const t2 = (S0 + maj) >>> 0;
+      h = g;
+      g = f;
+      f = e;
+      e = (d + t1) >>> 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (t1 + t2) >>> 0;
+    }
+    H[0] = (H[0] + a) >>> 0;
+    H[1] = (H[1] + b) >>> 0;
+    H[2] = (H[2] + c) >>> 0;
+    H[3] = (H[3] + d) >>> 0;
+    H[4] = (H[4] + e) >>> 0;
+    H[5] = (H[5] + f) >>> 0;
+    H[6] = (H[6] + g) >>> 0;
+    H[7] = (H[7] + h) >>> 0;
+  }
+  let hex = '';
+  for (let i = 0; i < 8; i++) hex += H[i].toString(16).padStart(8, '0');
+  return hex;
+}
+
+/* ==========================================================================
+ * 10. 便捷别名
+ * ========================================================================== */
+
+const bytesSource = sourceFromBytes;
+const blobSource = sourceFromBlob;
+const listZip = async (source, options) => (await openZip(source, options)).entries;
+const readZipEntry = async (source, path, options) => {
+  const zip = await openZip(source, options);
+  return zip.read(path);
+};
+
+const __defaultExport = {
+  VERSION,
+  crc32,
+  Crc32,
+  inflateRaw,
+  deflateRaw,
+  openZip,
+  readZip,
+  iterateZip,
+  unzip,
+  makeFilter,
+  writeZip,
+  writeZipBlob,
+  sourceFromBytes,
+  sourceFromBlob,
+  sha256Hex,
+  listZip,
+  readZipEntry,
+};
+
+/* ===== core.mjs ===== */
+/**
+ * DeepSeek 网页端导出 → Chatbox / 通用格式 核心转换逻辑
+ * 纯 JS，无依赖，浏览器与 Node 通用（ESM）。
+ */
+
+/* ---------------- 通用小工具 ---------------- */
+
+function fnvHex(input, seed = 0x811c9dc5) {
+  let h = seed >>> 0;
+  for (let i = 0; i < input.length; i++) {
+    h ^= input.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h >>> 0;
+}
+
+/** 稳定 UUID 形状 id（同输入得到同输出） */
+function stableId(seed) {
+  const parts = [];
+  let s = 0x811c9dc5;
+  for (let i = 0; i < 4; i++) {
+    s = fnvHex(seed + '#' + i, s);
+    parts.push(s.toString(16).padStart(8, '0'));
+  }
+  const hex = parts.join('');
+  return (
+    hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-4' + hex.slice(13, 16) + '-a' + hex.slice(17, 20) + '-' + hex.slice(20, 32)
+  );
+}
+
+function isoToMs(iso) {
+  if (!iso) return Date.now();
+  const t = Date.parse(iso);
+  return Number.isFinite(t) ? t : Date.now();
+}
+
+function extOf(name = '') {
+  const m = String(name).toLowerCase().match(/\.([a-z0-9]{1,10})$/);
+  return m ? m[1] : '';
+}
+
+const MIME_BY_EXT = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  bmp: 'image/bmp',
+  svg: 'image/svg+xml',
+  txt: 'text/plain',
+  md: 'text/markdown',
+  json: 'application/json',
+  pdf: 'application/pdf',
+  csv: 'text/csv',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  zip: 'application/zip',
+};
+
+function mimeOf(name = '') {
+  const e = extOf(name);
+  return MIME_BY_EXT[e] || (e ? 'application/octet-stream' : 'application/octet-stream');
+}
+
+async function coreSha256Hex(bytes) {
+  if (globalThis.crypto && globalThis.crypto.subtle) {
+    const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', buf);
+    return Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+  }
+  // 退化路径：某些 file:// / 非安全上下文没有 crypto.subtle，用内联的纯 JS 实现（来自 zipkit）
+  if (typeof sha256Hex === 'function') return sha256Hex(bytes);
+  throw new Error('当前环境没有可用的 SHA-256 实现');
+}
+
+function utf8Encode(str) {
+  return new TextEncoder().encode(str);
+}
+
+function utf8Decode(bytes) {
+  return new TextDecoder('utf-8').decode(bytes);
+}
+
+function base64ToBytes(b64) {
+  const bin = globalThis.atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function bytesToBase64(bytes) {
+  let bin = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return globalThis.btoa(bin);
+}
+
+/* ---------------- DeepSeek 导出解析 ---------------- */
+
+/**
+ * 把一个 DeepSeek 会话 json 规范化成中性结构：
+ * { id, title, createdAt, updatedAt, messages: [{ role, id, time, thinking, text, files, search, cards, notes }] }
+ */
+function parseDeepSeekSession(raw) {
+  const messages = [];
+  const list = Array.isArray(raw?.messages) ? raw.messages : [];
+  for (const m of list) {
+    const role = String(m.role || '').toUpperCase() === 'USER' ? 'user' : 'assistant';
+    const entry = {
+      id: String(m.id ?? ''),
+      role,
+      time: isoToMs(m.inserted_at),
+      thinking: '',
+      text: '',
+      files: [],
+      search: [],
+      cards: [],
+      notes: [],
+      status: m.status || '',
+    };
+    const frags = Array.isArray(m.fragments) ? m.fragments : [];
+    for (const f of frags) {
+      const t = f?.type || '';
+      if (t === 'REQUEST' || t === 'RESPONSE' || t === 'TEMPLATE_RESPONSE') {
+        if (typeof f.content === 'string' && f.content) {
+          entry.text = entry.text ? entry.text + '\n' + f.content : f.content;
+        }
+      } else if (t === 'THINK') {
+        if (typeof f.content === 'string' && f.content) {
+          entry.thinking = entry.thinking ? entry.thinking + '\n' + f.content : f.content;
+        }
+      } else if (t === 'TOOL_SEARCH') {
+        if (Array.isArray(f.queries) && f.queries.length) entry.search.push(...f.queries.map(String));
+        if (Array.isArray(f.results) && f.results.length) {
+          entry.search.push(...f.results.slice(0, 10).map((r) => String(r?.title || r?.url || '')));
+        }
+      } else if (t === 'TOOL_OPEN') {
+        entry.cards.push({ title: f.title || '', url: f.url || '', site: f.site_name || '', snippet: f.snippet || '' });
+      } else if (t === 'FILE') {
+        const files = Array.isArray(f.files) ? f.files : [];
+        for (const file of files) {
+          entry.files.push({
+            id: file?.id || '',
+            name: file?.file_name || 'file',
+            size: Number(file?.file_size) || 0,
+            isImage: Boolean(file?.is_image),
+            path: file?.export_path || '',
+            width: file?.width || null,
+            height: file?.height || null,
+          });
+        }
+      } else if (t === 'CONTENT_RISK' || t === 'TIP') {
+        if (f.content) entry.notes.push(String(f.content));
+      } else if (f?.content) {
+        entry.notes.push(String(f.content));
+      }
+    }
+    if (entry.text || entry.thinking || entry.files.length || entry.search.length || entry.cards.length) {
+      messages.push(entry);
+    }
+  }
+  // 保持源文件顺序（DeepSeek 已按对话顺序排好，inserted_at 有毫秒级倒挂，不能重排）
+  return {
+    id: String(raw?.id || ''),
+    title: String(raw?.title || '未命名会话').trim() || '未命名会话',
+    pinned: Boolean(raw?.pinned),
+    createdAt: isoToMs(raw?.inserted_at),
+    updatedAt: isoToMs(raw?.updated_at),
+    messages,
+  };
+}
+
+/**
+ * 解析「DeepSeek-Exporter」浏览器扩展导出的 Markdown（每会话一个 .md）：
+ *
+ *   # AI 对话记录
+ *
+ *   ## 用户
+ *   ...
+ *   ---
+ *   ## AI
+ *   正文
+ *   > [思考过程]
+ *   > ...
+ */
+function parseMarkdownConversation(text, opts = {}) {
+  const src = String(text || '').replace(/\r\n?/g, '\n');
+  const fileName = opts.fileName || '对话';
+  const baseName = fileName.replace(/\.(md|markdown|txt)$/i, '');
+  const lines = src.split('\n');
+  const messages = [];
+  const HEAD = /^#{1,3}\s*(用户|我|user|human|ai|assistant|助手|deepseek)\s*[:：]?\s*$/i;
+  let cur = null;
+  let mode = 'text';
+  const flush = () => {
+    if (!cur) return;
+    const text = cur.text.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    const thinking = cur.thinking.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    if (text || thinking) {
+      messages.push({
+        id: String(messages.length + 1),
+        role: cur.role,
+        time: 0,
+        thinking,
+        text,
+        files: [],
+        search: [],
+        cards: [],
+        notes: [],
+        status: 'FINISHED',
+      });
+    }
+    cur = null;
+  };
+  for (const raw of lines) {
+    const line = raw.replace(/\s+$/, '');
+    const head = HEAD.exec(line.trim());
+    if (head) {
+      flush();
+      const who = head[1].toLowerCase();
+      const isUser = ['用户', '我', 'user', 'human'].includes(who);
+      cur = { role: isUser ? 'user' : 'assistant', text: [], thinking: [] };
+      mode = 'text';
+      continue;
+    }
+    if (!cur) continue;
+    if (/^>\s*\[?思考(过程|内容)?\]?\s*$/.test(line.trim())) {
+      mode = 'think';
+      continue;
+    }
+    if (mode === 'think') {
+      if (/^>/.test(line)) {
+        cur.thinking.push(line.replace(/^>\s?/, ''));
+      } else if (!line.trim()) {
+        cur.thinking.push('');
+      } else {
+        mode = 'text';
+        cur.text.push(line);
+      }
+      continue;
+    }
+    if (/^\s*(-{3,}|\*{3,})\s*$/.test(line)) continue; // 分隔线
+    if (/^#\s*AI\s*对话记录\s*$/.test(line.trim())) continue;
+    cur.text.push(line);
+  }
+  flush();
+
+  // 时间戳：文件名里的时间（若有），否则按顺序递增
+  const stamp = /(\d{4})[-_.]?(\d{2})[-_.]?(\d{2})[-_ T]?(\d{2})?[-_.:]?(\d{2})?/.exec(baseName);
+  let t = stamp
+    ? new Date(
+        Number(stamp[1]),
+        Number(stamp[2]) - 1,
+        Number(stamp[3]),
+        Number(stamp[4] || 9),
+        Number(stamp[5] || 0)
+      ).getTime()
+    : opts.mtime || Date.now();
+  if (!Number.isFinite(t)) t = opts.mtime || Date.now();
+  for (const m of messages) {
+    m.time = t;
+    t += 1000;
+  }
+
+  const firstUser = messages.find((m) => m.role === 'user');
+  const cleanTitle = baseName
+    .replace(/^(AI\s*)?对话记录[-_ ]*/i, '')
+    .replace(/^(deepseek|chat)[-_ ]*/i, '')
+    .replace(/[-_ ]*\d{4}[-_.]?\d{2}[-_.]?\d{2}.*$/, '')
+    .trim();
+  const title = cleanTitle || (firstUser ? firstUser.text.slice(0, 30) : '') || baseName || '未命名会话';
+
+  return {
+    id: opts.id || stableId('md:' + baseName + ':' + (opts.mtime || 0)),
+    title,
+    pinned: false,
+    createdAt: messages[0]?.time || Date.now(),
+    updatedAt: messages[messages.length - 1]?.time || Date.now(),
+    messages,
+  };
+}
+
+/* ---------------- Chatbox 备份生成 ---------------- */
+
+const CHATBOX_EXTENSION = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+  'image/svg+xml': 'svg',
+  'text/plain': 'txt',
+  'text/markdown': 'md',
+  'application/json': 'json',
+  'application/pdf': 'pdf',
+};
+
+function sessionPathComponent(sessionId) {
+  const enc = encodeURIComponent(sessionId).replaceAll('.', '%2E');
+  return enc.length <= 200 ? enc : 'id-' + fnvHex(sessionId).toString(16);
+}
+
+/**
+ * 中性会话 → Chatbox session.json 对象 + 需要的资源二进制
+ * @param ds 由 parseDeepSeekSession 得到
+ * @param ctx { sessionId?: string, readFile?: async (exportPath) => Uint8Array|null, includeImages?: boolean }
+ */
+async function buildChatboxSession(ds, ctx = {}) {
+  const includeImages = ctx.includeImages !== false;
+  const readFile = ctx.readFile || (async () => null);
+  const sessionId =
+    ctx.sessionId ||
+    (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ds.id)
+      ? ds.id
+      : stableId('session:' + ds.id + ':' + ds.title));
+  const resources = [];
+  let resourceSeq = 0;
+  const imageKeyCache = new Map();
+
+  async function imageResource(file) {
+    if (!file.path) return null;
+    if (imageKeyCache.has(file.path)) return imageKeyCache.get(file.path);
+    let bytes = null;
+    try {
+      bytes = await readFile(file.path);
+    } catch {
+      bytes = null;
+    }
+    if (!bytes || !bytes.length) return null;
+    resourceSeq += 1;
+    const id = 'resource-' + String(resourceSeq).padStart(6, '0');
+    const mimeType = mimeOf(file.name);
+    const storageKey = 'picture:' + stableId('img:' + ds.id + ':' + file.path);
+    const ext = CHATBOX_EXTENSION[mimeType] || extOf(file.name) || 'bin';
+    resources.push({
+      id,
+      path: `sessions/${sessionPathComponent(sessionId)}/resources/${id}.${ext}`,
+      originalStorageKeys: [storageKey],
+      sessionIds: [sessionId],
+      scope: 'session',
+      encoding: 'data-url-base64',
+      mimeType,
+      kind: 'image',
+      filename: file.name,
+      data: bytes,
+    });
+    imageKeyCache.set(file.path, storageKey);
+    return storageKey;
+  }
+
+  const messages = [];
+  for (const m of ds.messages) {
+    const parts = [];
+    if (m.role === 'assistant' && m.thinking) {
+      parts.push({ type: 'reasoning', text: m.thinking });
+    }
+    if (m.search.length) {
+      parts.push({ type: 'info', text: '🔍 联网搜索：' + m.search.slice(0, 12).join(' · ') });
+    }
+    for (const card of m.cards.slice(0, 8)) {
+      parts.push({
+        type: 'info',
+        text: `🔗 ${card.title}${card.site ? '（' + card.site + '）' : ''}\n${card.url}`.trim(),
+      });
+    }
+    for (const file of m.files) {
+      if (file.isImage && includeImages) {
+        const key = await imageResource(file);
+        if (key) {
+          parts.push({ type: 'image', storageKey: key });
+          continue;
+        }
+      }
+      parts.push({ type: 'info', text: `📎 附件：${file.name}` });
+    }
+    for (const note of m.notes) parts.push({ type: 'info', text: note });
+    if (m.text) parts.push({ type: 'text', text: m.text });
+    if (!parts.length) continue;
+    messages.push({
+      id: stableId(`msg:${ds.id}:${m.role}:${m.id}:${m.time}`),
+      role: m.role,
+      contentParts: parts,
+      timestamp: m.time,
+      ...(m.role === 'assistant' ? { model: 'deepseek-reasoner', aiProvider: 'DeepSeek' } : {}),
+    });
+  }
+
+  return {
+    session: {
+      id: sessionId,
+      name: ds.title,
+      type: 'chat',
+      starred: ds.pinned || undefined,
+      messages,
+    },
+    resources,
+    createdAt: ds.createdAt,
+  };
+}
+
+function chatboxMeta(session, sortOrder, createdAt) {
+  return {
+    id: session.id,
+    name: session.name,
+    starred: session.starred,
+    type: session.type,
+    sortOrder,
+    createdAt,
+  };
+}
+
+/**
+ * 生成 Chatbox 备份 zip 的 entries（manifest 必须最后或任意顺序，导入端做了全量校验）
+ * @param built [{ session, resources:[] }]
+ * @param opts { appVersion, platform, exportedAt }
+ */
+async function buildChatboxArchive(built, opts = {}) {
+  const entries = [];
+  const sessions = [];
+  const resources = [];
+  const warnings = [];
+  const usedResourceIds = new Set();
+
+  for (let i = 0; i < built.length; i++) {
+    const { session, resources: resList } = built[i];
+    const path = `sessions/${sessionPathComponent(session.id)}/session.json`;
+    const bytes = utf8Encode(JSON.stringify(session));
+    sessions.push({
+      path,
+      size: bytes.length,
+      checksum: { algorithm: 'sha256', value: await coreSha256Hex(bytes) },
+      id: session.id,
+      meta: chatboxMeta(session, built.length - i, built[i].createdAt || session.messages[0]?.timestamp || Date.now()),
+      resourceIds: resList.map((r) => r.id),
+    });
+    entries.push({ path, data: bytes, deflate: true });
+    for (const r of resList) {
+      let id = r.id;
+      let guard = 0;
+      while (usedResourceIds.has(id) && guard++ < 1000) id = 'resource-' + stableId(r.path + ':' + guard).slice(0, 8);
+      usedResourceIds.add(id);
+      const finalPath = r.path.replace(/resources\/[^/]+\./, `resources/${id}.`);
+      const data = r.data instanceof Uint8Array ? r.data : new Uint8Array(r.data);
+      resources.push({
+        id,
+        path: finalPath,
+        size: data.length,
+        checksum: { algorithm: 'sha256', value: await coreSha256Hex(data) },
+        originalStorageKeys: r.originalStorageKeys,
+        sessionIds: [session.id],
+        scope: 'session',
+        encoding: r.encoding,
+        mimeType: r.mimeType,
+        kind: r.kind,
+        filename: r.filename,
+      });
+      sessions[sessions.length - 1].resourceIds = sessions[sessions.length - 1].resourceIds.map((x) =>
+        x === r.id ? id : x
+      );
+      entries.push({ path: finalPath, data, deflate: false });
+    }
+  }
+
+  const manifest = {
+    format: 'chatbox-backup',
+    formatVersion: 2,
+    exportedAt: (opts.exportedAt || new Date()).toISOString(),
+    application: {
+      name: 'Chatbox',
+      version: opts.appVersion || '1.16.0',
+      platform: opts.platform || 'win32',
+    },
+    exportItems: ['conversations'],
+    data: {},
+    sessions,
+    resources,
+    warnings,
+    stats: {
+      sessionCount: sessions.length,
+      resourceCount: resources.length,
+      deduplicatedResourceCount: 0,
+      warningCount: warnings.length,
+    },
+  };
+
+  const manifestBytes = utf8Encode(JSON.stringify(manifest));
+  entries.push({ path: 'manifest.json', data: manifestBytes, deflate: true });
+  return { manifest, entries };
+}
+
+/* ---------------- Chatbox V1（单文件 JSON，兼容所有版本） ---------------- */
+
+/**
+ * 生成 V1 键值对象：{configVersion, __exported_items, __exported_at, "session:<id>": {...}, "chat-sessions-list": [...]}
+ * 只保留文本与思考，不含附件（与 Chatbox 自己的 V1 导出行为一致）。
+ */
+function buildChatboxV1File(built, opts = {}) {
+  const out = {
+    configVersion: 15,
+    __exported_items: ['conversations'],
+    __exported_at: (opts.exportedAt || new Date()).toISOString(),
+  };
+  const list = [];
+  built.forEach((b, i) => {
+    const s = b.session;
+    const lean = {
+      id: s.id,
+      name: s.name,
+      type: 'chat',
+      ...(s.starred ? { starred: true } : {}),
+      messages: s.messages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        contentParts: (m.contentParts || []).filter((p) => p.type === 'text' || p.type === 'reasoning'),
+        timestamp: m.timestamp,
+        ...(m.model ? { model: m.model } : {}),
+      })),
+    };
+    out['session:' + s.id] = lean;
+    list.push({
+      id: s.id,
+      name: s.name,
+      type: 'chat',
+      ...(s.starred ? { starred: true } : {}),
+      sortOrder: built.length - i,
+      createdAt: b.createdAt || lean.messages[0]?.timestamp || Date.now(),
+    });
+  });
+  out['chat-sessions-list'] = list;
+  return JSON.stringify(out);
+}
+
+/* ---------------- Markdown 导出 ---------------- */
+
+function toMarkdown(ds) {
+  const lines = [`# ${ds.title}`, '', `> 会话 ID: ${ds.id}　创建: ${new Date(ds.createdAt).toLocaleString()}`, ''];
+  for (const m of ds.messages) {
+    lines.push(`## ${m.role === 'user' ? '🧑 用户' : '🤖 DeepSeek'}　${new Date(m.time).toLocaleString()}`);
+    lines.push('');
+    if (m.thinking) {
+      lines.push('<details><summary>思考过程</summary>', '', m.thinking, '', '</details>', '');
+    }
+    if (m.text) {
+      lines.push(m.text, '');
+    }
+    for (const f of m.files) lines.push(`📎 附件：${f.name}${f.path ? ' (`' + f.path + '`)' : ''}`, '');
+    for (const c of m.cards) lines.push(`🔗 [${c.title}](${c.url})`, '');
+    lines.push('---', '');
+  }
+  return lines.join('\n');
+}
+
+/* ---------------- DSH workspace key ---------------- */
+
+function workspaceKey(cwd) {
+  const p = String(cwd || '');
+  let out = '';
+  let separatorRun = false;
+  for (let i = 0; i < p.length; i++) {
+    const code = p.charCodeAt(i);
+    const ch = String.fromCharCode(code);
+    if (ch === '\\' || ch === '/' || ch === ':') {
+      if (!separatorRun) out += '-';
+      separatorRun = true;
+      continue;
+    }
+    separatorRun = false;
+    if (ch !== '~' && /^[A-Za-z0-9._-]$/.test(ch)) out += ch;
+    else out += '~' + code.toString(16).toUpperCase().padStart(4, '0');
+  }
+  return '--' + (out.replace(/^-+/, '') || 'root').slice(0, 251) + '--';
+}
+
+/* ===== dsh_session_writer.js（隔离作用域） ===== */
+const DshWriter = (function () {
+/**
+ * dsh_session_writer.js — 把「标题 + 一组 user/assistant 消息」编码成 DeepSeek Harness
+ * 能直接读取的 `session.v4.jsonl.zstd`。
+ *
+ * 纯 ESM、零依赖、浏览器可直接用（只用 TextEncoder / Uint8Array / crypto.randomUUID(可选)）。
+ *
+ * 输出物理格式（与真实 DSH 日志同构）：
+ *   frame #0 : {"type":"session","version":4,...} + "\n"      ← 一个独立 zstd frame，只含 header 行
+ *   frame #n : 若干行 JSON，每行一条事件                          ← 每个 append 批次一个 zstd frame
+ * 所有 frame 都是「未压缩 raw block」的 zstd frame，带/不带 content checksum 均可（默认带）。
+ *
+ * 关键约束（均为实测/读源码得出，见 NOTES.md「实测结论」）：
+ *   - header.type === 'session'，version === 4，必含 isSeeded / delegationDepth，不允许多余键
+ *   - header 必须是独立的第一个 frame，且内容恰好是一行（以 \n 结尾）
+ *   - 事件 seq 从 0 连续、无空洞；每个 frame 的明文必须整行结束
+ *   - surface 事件（user/message 等）必须带 surfaceOp:'append'
+ *   - assistant/message 必须带 stream 数组，message.source.kind === 'model' 且含 provider/model
+ */
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 1. zstd：未压缩 raw block 编码
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** zstd 帧魔数（小端写入为 28 B5 2F FD）。 */
+const ZSTD_MAGIC = 0xfd2fb528;
+
+const BLOCK_MAX = 128 * 1024; // 规范：Block_Maximum_Size = min(128 KiB, Window_Size)
+const XXH64_P1 = [0x85ebca87, 0x9e3779b1]; // 0x9E3779B185EBCA87
+const XXH64_P2 = [0x27d4eb4f, 0xc2b2ae3d]; // 0xC2B2AE3D27D4EB4F
+const XXH64_P3 = [0x9e3779f9, 0x165667b1]; // 0x165667B19E3779F9
+const XXH64_P4 = [0xc2b2ae63, 0x85ebca77]; // 0x85EBCA77C2B2AE63
+const XXH64_P5 = [0x165667c5, 0x27d4eb2f]; // 0x27D4EB2F165667C5
+
+/** 64 位加法（lo/hi 各 32 位无符号）→ [lo, hi]。 */
+function add64(alo, ahi, blo, bhi) {
+  let lo = alo + blo;
+  let carry = 0;
+  if (lo > 0xffffffff) {
+    lo -= 0x100000000;
+    carry = 1;
+  }
+  return [lo >>> 0, (ahi + bhi + carry) >>> 0];
+}
+
+/** 64 位减法（mod 2^64）→ [lo, hi]。 */
+function sub64(alo, ahi, blo, bhi) {
+  let lo = alo - blo;
+  let borrow = 0;
+  if (lo < 0) {
+    lo += 0x100000000;
+    borrow = 1;
+  }
+  return [lo >>> 0, (ahi - bhi - borrow) >>> 0];
+}
+
+/** 64 位低 64 位乘法（lo/hi 各 32 位无符号）→ [lo, hi]。 */
+function mul64(alo, ahi, blo, bhi) {
+  const a0 = alo & 0xffff;
+  const a1 = alo >>> 16;
+  const a2 = ahi & 0xffff;
+  const a3 = ahi >>> 16;
+  const b0 = blo & 0xffff;
+  const b1 = blo >>> 16;
+  const b2 = bhi & 0xffff;
+  const b3 = bhi >>> 16;
+  // 16 位肢的教科书式相乘，进位一律用除法取，避免 JS 位运算把 >2^32 的中间值截断
+  let w0 = a0 * b0;
+  let c = Math.floor(w0 / 65536);
+  w0 -= c * 65536;
+  let w1 = a0 * b1 + a1 * b0 + c;
+  c = Math.floor(w1 / 65536);
+  w1 -= c * 65536;
+  let w2 = a0 * b2 + a1 * b1 + a2 * b0 + c;
+  c = Math.floor(w2 / 65536);
+  w2 -= c * 65536;
+  let w3 = a0 * b3 + a1 * b2 + a2 * b1 + a3 * b0 + c;
+  w3 %= 65536; // ≥2^64 的高位按 mod 2^64 丢弃
+  return [((w0 | (w1 << 16)) >>> 0), ((w2 | (w3 << 16)) >>> 0)];
+}
+
+/** 64 位循环左移。 */
+function rotl64(lo, hi, n) {
+  const r = n & 63;
+  if (r === 0) return [lo, hi];
+  if (r < 32) return [((lo << r) | (hi >>> (32 - r))) >>> 0, ((hi << r) | (lo >>> (32 - r))) >>> 0];
+  if (r === 32) return [hi, lo];
+  const m = r - 32;
+  return [((hi << m) | (lo >>> (32 - m))) >>> 0, ((lo << m) | (hi >>> (32 - m))) >>> 0];
+}
+
+const xor64 = (a, b) => [(a[0] ^ b[0]) >>> 0, (a[1] ^ b[1]) >>> 0];
+
+/** XXH64 的 round：acc += input*P2; acc = rotl(acc,31); acc *= P1。 */
+function xxh64Round(accLo, accHi, inLo, inHi) {
+  const product = mul64(inLo, inHi, XXH64_P2[0], XXH64_P2[1]);
+  let acc = add64(accLo, accHi, product[0], product[1]);
+  acc = rotl64(acc[0], acc[1], 31);
+  return mul64(acc[0], acc[1], XXH64_P1[0], XXH64_P1[1]);
+}
+
+function read32(bytes, i) {
+  return (bytes[i] | (bytes[i + 1] << 8) | (bytes[i + 2] << 16) | (bytes[i + 3] << 24)) >>> 0;
+}
+
+function read64(bytes, i) {
+  return [read32(bytes, i), read32(bytes, i + 4)];
+}
+
+/**
+ * XXH64（seed = 0），返回 [lo, hi] 两个 32 位无符号数。
+ * zstd 帧的 content checksum 取低 32 位。
+ * @param {Uint8Array} bytes
+ * @param {number} [seed]
+ * @returns {[number, number]}
+ */
+function xxhash64(bytes, seed = 0) {
+  const len = bytes.length;
+  let lo;
+  let hi;
+  let i = 0;
+  if (len >= 32) {
+    let v1 = add64(seed >>> 0, 0, XXH64_P1[0], XXH64_P1[1]);
+    v1 = add64(v1[0], v1[1], XXH64_P2[0], XXH64_P2[1]);
+    let v2 = add64(seed >>> 0, 0, XXH64_P2[0], XXH64_P2[1]);
+    let v3 = [seed >>> 0, 0];
+    let v4 = sub64(seed >>> 0, 0, XXH64_P1[0], XXH64_P1[1]);
+    const limit = len - 32;
+    while (i <= limit) {
+      const k = read64(bytes, i);
+      v1 = xxh64Round(v1[0], v1[1], k[0], k[1]);
+      const k2 = read64(bytes, i + 8);
+      v2 = xxh64Round(v2[0], v2[1], k2[0], k2[1]);
+      const k3 = read64(bytes, i + 16);
+      v3 = xxh64Round(v3[0], v3[1], k3[0], k3[1]);
+      const k4 = read64(bytes, i + 24);
+      v4 = xxh64Round(v4[0], v4[1], k4[0], k4[1]);
+      i += 32;
+    }
+    const r1 = rotl64(v1[0], v1[1], 1);
+    const r2 = rotl64(v2[0], v2[1], 7);
+    const r3 = rotl64(v3[0], v3[1], 12);
+    const r4 = rotl64(v4[0], v4[1], 18);
+    let acc = add64(r1[0], r1[1], r2[0], r2[1]);
+    acc = add64(acc[0], acc[1], r3[0], r3[1]);
+    acc = add64(acc[0], acc[1], r4[0], r4[1]);
+    lo = acc[0];
+    hi = acc[1];
+    for (const v of [v1, v2, v3, v4]) {
+      const r = xxh64Round(0, 0, v[0], v[1]);
+      lo = (lo ^ r[0]) >>> 0;
+      hi = (hi ^ r[1]) >>> 0;
+      const m = mul64(lo, hi, XXH64_P1[0], XXH64_P1[1]);
+      const a = add64(m[0], m[1], XXH64_P4[0], XXH64_P4[1]);
+      lo = a[0];
+      hi = a[1];
+    }
+  } else {
+    const base = add64(seed >>> 0, 0, XXH64_P5[0], XXH64_P5[1]);
+    lo = base[0];
+    hi = base[1];
+  }
+  const total = add64(lo, hi, len >>> 0, 0);
+  lo = total[0];
+  hi = total[1];
+
+  while (i + 8 <= len) {
+    const k = read64(bytes, i);
+    const r = xxh64Round(0, 0, k[0], k[1]);
+    lo = (lo ^ r[0]) >>> 0;
+    hi = (hi ^ r[1]) >>> 0;
+    const spin = rotl64(lo, hi, 27);
+    const m = mul64(spin[0], spin[1], XXH64_P1[0], XXH64_P1[1]);
+    const a = add64(m[0], m[1], XXH64_P4[0], XXH64_P4[1]);
+    lo = a[0];
+    hi = a[1];
+    i += 8;
+  }
+  if (i + 4 <= len) {
+    const v = read32(bytes, i);
+    const m = mul64(v, 0, XXH64_P1[0], XXH64_P1[1]);
+    lo = (lo ^ m[0]) >>> 0;
+    hi = (hi ^ m[1]) >>> 0;
+    const spin = rotl64(lo, hi, 23);
+    const m2 = mul64(spin[0], spin[1], XXH64_P2[0], XXH64_P2[1]);
+    const a = add64(m2[0], m2[1], XXH64_P3[0], XXH64_P3[1]);
+    lo = a[0];
+    hi = a[1];
+    i += 4;
+  }
+  while (i < len) {
+    const m = mul64(bytes[i], 0, XXH64_P5[0], XXH64_P5[1]);
+    lo = (lo ^ m[0]) >>> 0;
+    hi = (hi ^ m[1]) >>> 0;
+    const spin = rotl64(lo, hi, 11);
+    const p = mul64(spin[0], spin[1], XXH64_P1[0], XXH64_P1[1]);
+    lo = p[0];
+    hi = p[1];
+    i += 1;
+  }
+  // avalanche
+  return finalizeXXH64(lo, hi);
+}
+
+function finalizeXXH64(loIn, hiIn) {
+  // 重新做真实的 avalanche（保证 h ^= h >>> 33 等位移正确）
+  let h = [loIn >>> 0, hiIn >>> 0];
+  const shiftRight = (v, n) => (n >= 32 ? [v[1] >>> (n - 32), 0] : [((v[0] >>> n) | (v[1] << (32 - n))) >>> 0, v[1] >>> n]);
+  h = xor64(h, shiftRight(h, 33));
+  let m = mul64(h[0], h[1], XXH64_P2[0], XXH64_P2[1]);
+  h = xor64(m, shiftRight(m, 29));
+  m = mul64(h[0], h[1], XXH64_P3[0], XXH64_P3[1]);
+  h = xor64(m, shiftRight(m, 32));
+  return h;
+}
+
+/**
+ * zstd 帧 content checksum：XXH64(明文) 的低 32 位。
+ * @param {Uint8Array} bytes
+ * @returns {number}
+ */
+function zstdContentChecksum(bytes) {
+  return xxhash64(bytes)[0];
+}
+
+/**
+ * 编码一个「未压缩 raw block」zstd frame。
+ *
+ * 帧结构：魔数 | FHD | Window_Descriptor | (raw block)* | [checksum]
+ *  - FHD = 0x04 → 无 content size 字段、非 single-segment、带 content checksum、无字典
+ *  - 窗口大小取 ≥ 数据长度且 ≥1 KiB 的 2 的幂（上限 128 KiB），因此单个 raw block 可到 128 KiB
+ *
+ * @param {Uint8Array|ArrayBuffer|string} input 帧明文（字符串按 UTF-8 编码）
+ * @param {{checksum?: boolean}} [options] checksum 默认 true
+ * @returns {Uint8Array} 完整帧字节
+ */
+function encodeZstdFrame(input, options = {}) {
+  const data = toBytes(input);
+  const checksum = options.checksum !== false;
+  const windowLog = Math.min(17, Math.max(10, ceilLog2(Math.max(data.length, 1))));
+  const windowSize = 1 << windowLog;
+  const blockPayload = Math.min(BLOCK_MAX, windowSize);
+  const blockCount = Math.max(1, Math.ceil(data.length / blockPayload));
+  const headerSize = 4 + 1 + 1;
+  const blocksSize = data.length + blockCount * 3;
+  const out = new Uint8Array(headerSize + blocksSize + (checksum ? 4 : 0));
+  let p = 0;
+  // magic
+  out[p++] = ZSTD_MAGIC & 0xff;
+  out[p++] = (ZSTD_MAGIC >>> 8) & 0xff;
+  out[p++] = (ZSTD_MAGIC >>> 16) & 0xff;
+  out[p++] = (ZSTD_MAGIC >>> 24) & 0xff;
+  // frame header descriptor
+  out[p++] = checksum ? 0x04 : 0x00;
+  // window descriptor: Exponent = windowLog - 10, Mantissa = 0
+  out[p++] = ((windowLog - 10) << 3) & 0xff;
+  // blocks
+  for (let b = 0; b < blockCount; b += 1) {
+    const start = b * blockPayload;
+    const end = Math.min(data.length, start + blockPayload);
+    const size = end - start;
+    const last = b === blockCount - 1 ? 1 : 0;
+    const blockHeader = (size << 3) | 0 | last; // type 0 = Raw_Block
+    out[p++] = blockHeader & 0xff;
+    out[p++] = (blockHeader >>> 8) & 0xff;
+    out[p++] = (blockHeader >>> 16) & 0xff;
+    out.set(data.subarray(start, end), p);
+    p += size;
+  }
+  if (checksum) {
+    const sum = zstdContentChecksum(data);
+    new DataView(out.buffer).setUint32(p, sum >>> 0, true);
+    p += 4;
+  }
+  return out.subarray(0, p);
+}
+
+function ceilLog2(n) {
+  let log = 0;
+  while (1 << log < n) log += 1;
+  return log;
+}
+
+function toBytes(input) {
+  if (input instanceof Uint8Array) return input;
+  if (typeof input === 'string') return new TextEncoder().encode(input);
+  if (input instanceof ArrayBuffer) return new Uint8Array(input);
+  return new TextEncoder().encode(String(input));
+}
+
+/** 把多个 Uint8Array 顺序拼成一个。 */
+function concatBytes(parts) {
+  let total = 0;
+  for (const part of parts) total += part.length;
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2. 磁盘布局（与 dsh-session-persistence-jsonl 的 format.ts 一一对应）
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * cwd → 项目目录名。规则：`/` `\` `:` 的连续段折叠成单个 `-`；`[A-Za-z0-9._-]` 原样保留；
+ * 其余（含 `~`）写成 `~XXXX`（UTF-16 码元大写十六进制）；最后包成 `--…--`，最多 251 字符。
+ * @param {string} cwd
+ * @returns {string}
+ */
+function workspaceKey(cwd) {
+  if (!cwd) throw new Error('cwd 不能为空');
+  let readable = '';
+  let separatorRun = false;
+  for (let i = 0; i < cwd.length; i += 1) {
+    const code = cwd.charCodeAt(i);
+    const ch = String.fromCharCode(code);
+    if (ch === '/' || ch === '\\' || ch === ':') {
+      if (!separatorRun) readable += '-';
+      separatorRun = true;
+    } else if (ch !== '~' && /^[A-Za-z0-9._-]$/.test(ch)) {
+      readable += ch;
+      separatorRun = false;
+    } else {
+      readable += `~${code.toString(16).toUpperCase().padStart(4, '0')}`;
+      separatorRun = false;
+    }
+  }
+  return `--${(readable.replace(/^-+/, '') || 'root').slice(0, 251)}--`;
+}
+
+/**
+ * 会话 id → 单个安全路径段（`~XXXX` 转义，`.` / `..` 特判）。
+ * @param {string} raw
+ * @returns {string}
+ */
+function encodeSegment(raw) {
+  if (!raw) throw new Error('session id 不能为空');
+  if (raw === '.') return '~002E';
+  if (raw === '..') return '~002E~002E';
+  let out = '';
+  for (let i = 0; i < raw.length; i += 1) {
+    const code = raw.charCodeAt(i);
+    const ch = String.fromCharCode(code);
+    if (ch !== '~' && /^[A-Za-z0-9._-]$/.test(ch)) out += ch;
+    else out += `~${code.toString(16).toUpperCase().padStart(4, '0')}`;
+  }
+  return out;
+}
+
+/** 当前会话日志文件名（v4 + zstd）。 */
+const SESSION_LOG_FILENAME = 'session.v4.jsonl.zstd';
+
+/**
+ * 是否绝对路径（POSIX `/…`、Windows 盘符 `X:\` / `X:/`、UNC `\\server\share`）。
+ * DSH 的 header 校验要求 `cwd` 必须是绝对路径，否则日志会被拒绝读取。
+ * @param {string} value
+ * @returns {boolean}
+ */
+function isAbsolutePath(value) {
+  if (typeof value !== 'string' || value.length === 0) return false;
+  if (value.startsWith('/')) return true;
+  if (/^[A-Za-z]:[\\/]/.test(value)) return true;
+  if (value.startsWith('\\\\')) return true;
+  return false;
+}
+
+/**
+ * 相对会话根目录的落盘路径：`<workspace-key>/<encoded-id>/session.v4.jsonl.zstd`。
+ * @param {{cwd: string, id: string}} params
+ * @returns {string} 用 `/` 分隔的相对路径
+ */
+function sessionRelativePath({ cwd, id }) {
+  return `${workspaceKey(cwd)}/${encodeSegment(id)}/${SESSION_LOG_FILENAME}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. 事件流构造
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DEFAULT_PROVIDER = 'deepseek-account';
+const DEFAULT_MODEL = 'deepseek-v4-pro';
+
+function randomIdFactory(deterministic) {
+  let counter = 0;
+  if (!deterministic && typeof globalThis.crypto?.randomUUID === 'function') {
+    return () => globalThis.crypto.randomUUID();
+  }
+  return () => {
+    counter += 1;
+    const hex = counter.toString(16).padStart(12, '0');
+    return `00000000-0000-4000-8000-${hex}`;
+  };
+}
+
+function approxTokens(text) {
+  if (!text) return 0;
+  let n = 0;
+  for (const ch of text) n += ch.charCodeAt(0) > 0x2e80 ? 0.6 : 0.3;
+  return Math.max(1, Math.round(n));
+}
+
+/**
+ * 由「会话标题 + 消息列表」构造完整事件数组（含 header）。
+ *
+ * messages 支持两种形状：
+ *   { role:'user'|'assistant', text, reasoning?, time? }
+ *   或 { role, content:[{type,text}], time? }
+ *
+ * @param {object} params
+ * @param {string} params.id 会话 id（形如 `session-<uuid>`；不含则以 uuid 生成）
+ * @param {string} params.cwd 项目目录绝对路径
+ * @param {number} [params.createdAt] 会话创建时间（ms）
+ * @param {string} [params.title] 会话标题（写入 session/title）
+ * @param {Array<object>} [params.messages]
+ * @param {string} [params.provider]
+ * @param {string} [params.model]
+ * @param {string} [params.reasoningEffort] 'low' | 'medium' | 'high' | 'max'
+ * @param {string} [params.preset] permission preset，默认 'danger-full-access'
+ * @param {string} [params.sandboxMode] 默认与 preset 相同
+ * @param {string} [params.approvalPolicy] 默认 'never'
+ * @param {boolean} [params.withModelSelection] 是否写 model/selection（默认 true）
+ * @param {boolean} [params.withRequestContext] 是否写 request/context（默认 true）
+ * @param {boolean} [params.withSessionTitle] 是否写 session/title（默认 true）
+ * @param {boolean} [params.deterministic] 用可复现的 id 生成器（测试用）
+ * @returns {{header: object, events: Array<object>}}
+ */
+function buildSessionEvents(params) {
+  const {
+    id,
+    cwd,
+    createdAt = Date.now(),
+    title = '',
+    messages = [],
+    provider = DEFAULT_PROVIDER,
+    model = DEFAULT_MODEL,
+    reasoningEffort = 'high',
+    preset = 'danger-full-access',
+    sandboxMode = preset,
+    approvalPolicy = 'never',
+    withModelSelection = true,
+    withRequestContext = true,
+    withSessionTitle = true,
+    deterministic = true,
+  } = params;
+
+  if (!id) throw new Error('buildSessionEvents 需要 id');
+  if (!cwd) throw new Error('buildSessionEvents 需要 cwd（且必须是绝对路径）');
+  if (!isAbsolutePath(cwd)) throw new Error(`cwd 必须是绝对路径（DSH header 会拒绝非绝对路径）：${cwd}`);
+
+  const newId = randomIdFactory(deterministic);
+  const header = {
+    type: 'session',
+    version: 4,
+    id,
+    createdAt,
+    cwd,
+    isSeeded: false,
+    delegationDepth: 0,
+    agentPreset: 'standard',
+  };
+
+  /** @type {Array<object>} */
+  const events = [];
+  let clock = createdAt;
+  const tick = (delta = 1) => {
+    clock += delta;
+    return clock;
+  };
+  const push = (type, data, extra) => {
+    events.push({ type, seq: events.length, time: tick(), data, ...extra });
+  };
+
+  push('permission/preset', { preset });
+  push('sandbox/mode', { mode: sandboxMode });
+  push('approval/policy', { policy: approvalPolicy });
+  push('session/end-seed', {});
+  if (withModelSelection) push('model/selection', { provider, model, reasoningEffort });
+
+  const normalised = messages.map((message) => normaliseMessage(message));
+  const userEvents = [];
+  let turn = 0;
+  for (let i = 0; i < normalised.length; i += 1) {
+    const message = normalised[i];
+    if (message.role === 'system') continue;
+    if (message.role === 'user') {
+      turn += 1;
+      push('turn/start', { turn });
+      push('step/start', { turn, step: 1 });
+      const userId = newId();
+      push(
+        'user/message',
+        {
+          content: message.content,
+          source: { kind: 'user', clientTimeZone: 'Asia/Shanghai' },
+          role: 'user',
+          id: userId,
+        },
+        { surfaceOp: 'append' },
+      );
+      const userSeq = events.length - 1;
+      userEvents.push(userSeq);
+      if (withSessionTitle && title && userEvents.length === 1) {
+        push('session/title', { title, messageSeqs: [userSeq], source: { kind: 'fallback' } });
+      }
+      if (withRequestContext) {
+        push('request/context', { provider, model, contextWindow: 1048576 });
+      }
+      continue;
+    }
+    // assistant：必须落在已开 turn 的 step 内
+    if (turn === 0) {
+      turn += 1;
+      push('turn/start', { turn });
+      push('step/start', { turn, step: 1 });
+    }
+    const input = message.inputTokens ?? 0;
+    const output = approxTokens(jsonText(message.content));
+    push('assistant/message', {
+      turn,
+      step: 1,
+      message: {
+        role: 'assistant',
+        content: message.content,
+        source: { kind: 'model', provider, model },
+        id: newId(),
+      },
+      usage: {
+        inputTokens: input,
+        outputTokens: output,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        totalTokens: input + output,
+      },
+      stream: [],
+    }, { surfaceOp: 'append' });
+    const last = normalised[i + 1];
+    if (!last || last.role === 'user') {
+      push('step/end', { turn, step: 1 });
+      push('turn/end', { turn, reason: { kind: 'completed' } });
+    }
+  }
+  return { header, events };
+}
+
+/**
+ * 把宽松的输入（`text` / `content:[...]`）规整成 DSH 的 content block 数组。
+ * @param {object} message
+ * @returns {{role: string, content: Array<object>}}
+ */
+function normaliseMessage(message) {
+  if (!message || typeof message !== 'object') throw new Error('消息必须是对象');
+  const role = message.role === 'assistant' ? 'assistant' : message.role === 'system' ? 'system' : 'user';
+  const blocks = [];
+  const pushBlock = (type, text) => {
+    if (typeof text !== 'string' || text === '') return;
+    blocks.push({ type, text });
+  };
+  if (message.reasoning) pushBlock('reasoning', String(message.reasoning));
+  if (Array.isArray(message.content)) {
+    for (const item of message.content) {
+      if (typeof item === 'string') pushBlock('text', item);
+      else if (item && typeof item === 'object') pushBlock(item.type === 'reasoning' ? 'reasoning' : 'text', item.text);
+    }
+  }
+  if (typeof message.text === 'string') pushBlock('text', message.text);
+  if (blocks.length === 0) blocks.push({ type: 'text', text: '' });
+  return { role, content: blocks };
+}
+
+function jsonText(value) {
+  return JSON.stringify(value ?? '');
+}
+
+/**
+ * 构造可直接落盘的字节：header 单独一帧，事件按批次分帧。
+ * 每个 frame 的明文都以 `\n` 结尾，这是 DSH 扫描器的硬要求。
+ *
+ * @param {{header: object, events: Array<object>}} built
+ * @param {{checksum?: boolean, batchSize?: number}} [options]
+ * @returns {Uint8Array}
+ */
+function encodeSessionLog(built, options = {}) {
+  const checksum = options.checksum !== false;
+  const batchSize = options.batchSize ?? 1; // 真实 DSH 每个 append 批次一帧；1 = 每事件一帧
+  const frames = [];
+  frames.push(encodeZstdFrame(`${JSON.stringify(built.header)}\n`, { checksum }));
+  let buffer = '';
+  let pending = 0;
+  for (const event of built.events) {
+    buffer += `${JSON.stringify(event)}\n`;
+    pending += 1;
+    if (pending >= batchSize) {
+      frames.push(encodeZstdFrame(buffer, { checksum }));
+      buffer = '';
+      pending = 0;
+    }
+  }
+  if (buffer) frames.push(encodeZstdFrame(buffer, { checksum }));
+  return concatBytes(frames);
+}
+
+/**
+ * 一步到位：标题 + 消息 → `session.v4.jsonl.zstd` 字节 + 落盘位置。
+ *
+ * @param {object} params 见 {@link buildSessionEvents}，另支持 checksum / batchSize
+ * @returns {{bytes: Uint8Array, header: object, events: Array<object>, id: string,
+ *            relativePath: string, fileName: string, eventCount: number}}
+ */
+function buildSessionLog(params) {
+  const built = buildSessionEvents(params);
+  const bytes = encodeSessionLog(built, { checksum: params.checksum, batchSize: params.batchSize });
+  return {
+    bytes,
+    header: built.header,
+    events: built.events,
+    id: built.header.id,
+    relativePath: sessionRelativePath({ cwd: built.header.cwd, id: built.header.id }),
+    fileName: SESSION_LOG_FILENAME,
+    eventCount: built.events.length,
+  };
+}
+
+/** 生成一个新会话 id（`session-<uuid>`）。 */
+function newSessionId() {
+  const uuid =
+    typeof globalThis.crypto?.randomUUID === 'function'
+      ? globalThis.crypto.randomUUID()
+      : `00000000-0000-4000-8000-${Date.now().toString(16).padStart(12, '0')}`;
+  return `session-${uuid}`;
+}
+
+const __internal = { add64, mul64, rotl64, finalizeXXH64, toBytes, ceilLog2 };
+
+return { xxhash64: typeof xxhash64 !== 'undefined' ? xxhash64 : undefined, zstdContentChecksum: typeof zstdContentChecksum !== 'undefined' ? zstdContentChecksum : undefined, encodeZstdFrame: typeof encodeZstdFrame !== 'undefined' ? encodeZstdFrame : undefined, concatBytes: typeof concatBytes !== 'undefined' ? concatBytes : undefined, workspaceKey: typeof workspaceKey !== 'undefined' ? workspaceKey : undefined, encodeSegment: typeof encodeSegment !== 'undefined' ? encodeSegment : undefined, isAbsolutePath: typeof isAbsolutePath !== 'undefined' ? isAbsolutePath : undefined, sessionRelativePath: typeof sessionRelativePath !== 'undefined' ? sessionRelativePath : undefined, buildSessionEvents: typeof buildSessionEvents !== 'undefined' ? buildSessionEvents : undefined, encodeSessionLog: typeof encodeSessionLog !== 'undefined' ? encodeSessionLog : undefined, buildSessionLog: typeof buildSessionLog !== 'undefined' ? buildSessionLog : undefined, newSessionId: typeof newSessionId !== 'undefined' ? newSessionId : undefined, ZSTD_MAGIC: typeof ZSTD_MAGIC !== 'undefined' ? ZSTD_MAGIC : undefined, SESSION_LOG_FILENAME: typeof SESSION_LOG_FILENAME !== 'undefined' ? SESSION_LOG_FILENAME : undefined, __internal: typeof __internal !== 'undefined' ? __internal : undefined };
+})();
+/* ===== app.js ===== */
+/* ================= 页面逻辑 ================= */
+
+const $ = (id) => document.getElementById(id);
+const logEl = $('log');
+let logLines = 0;
+
+function log(msg, kind = '') {
+  if (logLines === 0) logEl.textContent = '';
+  const span = document.createElement('span');
+  if (kind) span.className = kind;
+  span.textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+  logEl.appendChild(span);
+  logEl.scrollTop = logEl.scrollHeight;
+  logLines++;
+}
+
+function fmtBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  return (n / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+/* ---------------- 运行环境 / 设备 ---------------- */
+
+const UA = navigator.userAgent || '';
+const IS_IOS = /iPad|iPhone|iPod/.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const IS_ANDROID = /Android/i.test(UA);
+
+// device.js（内联在 <head>，首帧就设置 data-device）是设备判定的唯一真源
+const DEVINFO = window.__DS2CB_DEVICE__ || null;
+const deviceDetect = DEVINFO ? DEVINFO.detect : () => 'desktop';
+const deviceLabel = DEVINFO ? DEVINFO.label : (d) => d;
+
+let DEVICE = deviceDetect();
+const isTouchLikeDevice = () => DEVICE !== 'desktop';
+// 兼容旧调用点：非桌面（手机/平板）都按"触屏设备"处理保存方式
+const MOBILE = () => isTouchLikeDevice();
+
+const tick = () => new Promise((r) => setTimeout(r, 0));
+
+/**
+ * 保存/分享产物。
+ * - 手机/平板：优先系统分享（iOS「存储到文件」、Android「保存到设备/发送给 App」）
+ * - 电脑 / 分享不可用：走 <a download>
+ * 返回 'shared' | 'downloaded' | 'cancelled'
+ */
+async function saveFile(bytes, filename, mime = 'application/octet-stream') {
+  const blob = new Blob([bytes], { type: mime });
+
+  if (MOBILE() && typeof File === 'function' && typeof navigator.canShare === 'function') {
+    try {
+      const file = new File([blob], filename, { type: mime });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: filename });
+        log(`已通过系统「分享 / 存储」交出：${filename}`, 'ok');
+        return 'shared';
+      }
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        log('已取消分享（文件没有保存）', 'warn');
+        return 'cancelled';
+      }
+      // 常见于浏览器要求「必须在用户手势内」——不再打扰用户，直接走下载
+      log('系统分享未启用，改用下载', 'dim');
+    }
+  }
+
+  const url = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.rel = 'noopener';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    if (MOBILE()) log(`已发起下载：${filename}（iPhone 会存到「文件 → 下载」，Android 存到「下载」）`, 'ok');
+    return 'downloaded';
+  } catch (err) {
+    // 极老 iOS 不支持 a.download：退回新标签打开
+    try {
+      window.open(url, '_blank');
+      log('已在新标签页打开，长按选择「存储到文件」', 'warn');
+      return 'downloaded';
+    } catch {
+      throw err;
+    }
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
+  }
+}
+
+const download = (bytes, filename, mime) => saveFile(bytes, filename, mime);
+
+function stamp() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+}
+
+function detectPlatform() {
+  if (IS_IOS) return 'ios';
+  if (IS_ANDROID) return 'android';
+  const ua = navigator.userAgent;
+  if (/Windows/i.test(ua)) return 'win32';
+  if (/Mac/i.test(ua)) return 'darwin';
+  return 'linux';
+}
+
+/* ---------------- 数据源抽象 ---------------- */
+
+let SOURCE = null;
+let SESSIONS = [];
+
+async function sourceFromZip(file) {
+  if (typeof openZip !== 'function') throw new Error('zip 读取模块缺失');
+  log(`读取 ${file.name}（${fmtBytes(file.size)}）…`);
+  // openZip(File) 只读 EOCD + 中央目录建索引，不会把整个 80MB 读进内存
+  const zip = await openZip(file);
+  const paths = zip.entries.filter((e) => !e.isDirectory).map((e) => e.path);
+  log(`zip 条目 ${paths.length} 个（压缩总大小 ${fmtBytes(zip.stats ? zip.stats.compressedSize : file.size)}）`, 'dim');
+
+  const lower = new Map(paths.map((p) => [p.toLowerCase(), p]));
+  const baseIndex = new Map();
+  for (const p of paths) {
+    const b = p.slice(p.lastIndexOf('/') + 1).toLowerCase();
+    if (!baseIndex.has(b)) baseIndex.set(b, p);
+  }
+  const resolve = (want) => {
+    const w = String(want).replace(/^\.?\//, '').toLowerCase();
+    if (lower.has(w)) return lower.get(w);
+    const b = w.slice(w.lastIndexOf('/') + 1);
+    if (baseIndex.has(b)) return baseIndex.get(b);
+    for (const [k, v] of lower) if (k.endsWith('/' + w)) return v;
+    return null;
+  };
+
+  return {
+    kind: 'zip',
+    label: file.name,
+    count: paths.length,
+    paths,
+    has: (p) => resolve(p) !== null,
+    text: async (p) => {
+      const real = resolve(p);
+      if (!real) throw new Error('找不到 ' + p);
+      return utf8Decode(await zip.read(real));
+    },
+    bytes: async (p) => {
+      const real = resolve(p);
+      if (!real) return null;
+      return await zip.read(real);
+    },
+    listSessions: () =>
+      paths.filter((p) => /(^|\/)chat_sessions\/[^/]+\.json$/i.test(p) && !/_files\//.test(p)),
+    listMarkdown: () => paths.filter((p) => /\.(md|markdown)$/i.test(p)),
+    hasPath: (re) => paths.some((p) => re.test(p)),
+  };
+}
+
+function sourceFromFiles(files) {
+  const map = new Map();
+  const base = new Map();
+  for (const f of files) {
+    const rel = (f.webkitRelativePath || f.name).replace(/\\/g, '/');
+    map.set(rel, f);
+    const b = rel.slice(rel.lastIndexOf('/') + 1).toLowerCase();
+    if (!base.has(b)) base.set(b, f);
+  }
+  const resolve = (want) => {
+    const w = String(want).replace(/^\.?\//, '');
+    if (map.has(w)) return map.get(w);
+    const b = w.slice(w.lastIndexOf('/') + 1).toLowerCase();
+    if (base.has(b)) return base.get(b);
+    for (const k of map.keys()) if (k.toLowerCase().endsWith('/' + w.toLowerCase())) return map.get(k);
+    return null;
+  };
+  const paths = [...map.keys()];
+  const topDir = files[0]?.webkitRelativePath ? files[0].webkitRelativePath.split('/')[0] : '';
+  return {
+    kind: 'dir',
+    label: topDir || (files.length === 1 ? files[0].name : files.length + ' 个文件'),
+    count: files.length,
+    paths,
+    has: (p) => resolve(p) !== null,
+    text: async (p) => {
+      const f = resolve(p);
+      if (!f) throw new Error('找不到 ' + p);
+      return await f.text();
+    },
+    bytes: async (p) => {
+      const f = resolve(p);
+      return f ? new Uint8Array(await f.arrayBuffer()) : null;
+    },
+    listSessions: () =>
+      paths.filter((p) => /(^|\/)chat_sessions\/[^/]+\.json$/i.test(p) && !/_files\//.test(p)),
+    listMarkdown: () => paths.filter((p) => /\.(md|markdown)$/i.test(p)),
+    hasPath: (re) => paths.some((p) => re.test(p)),
+  };
+}
+
+/* ---------------- 载入进度 ---------------- */
+
+function showLoad(title, ratio, sub) {
+  const box = $('loadBox');
+  if (!box) return;
+  box.hidden = false;
+  $('loadTitle').textContent = title;
+  const pct = Number.isFinite(ratio) ? Math.max(0, Math.min(1, ratio)) : 0;
+  $('loadProg').value = pct;
+  $('loadPct').textContent = Number.isFinite(ratio) ? Math.round(pct * 100) + '%' : '';
+  if (sub !== undefined) $('loadSub').textContent = sub;
+}
+
+function hideLoad() {
+  const box = $('loadBox');
+  if (box) box.hidden = true;
+}
+
+/** 解析阶段的进度：0 → 0.15 读索引，0.15 → 0.98 逐会话解析 */
+function phaseProgress(done, total, from, to) {
+  const r = total ? done / total : 1;
+  return from + (to - from) * r;
+}
+
+/* ---------------- 载入会话 ---------------- */
+
+async function loadSessions() {
+  SESSIONS = [];
+  const sessionPaths = SOURCE.listSessions();
+
+  if (sessionPaths.length) {
+    const total = sessionPaths.length;
+    log(`发现 ${total} 个会话文件`, 'dim');
+    showLoad('正在解析会话…', 0.15, `共 ${total} 个会话，手机 / 平板上可能需要几秒，请稍等。`);
+    await tick();
+    let done = 0;
+    for (const p of sessionPaths) {
+      try {
+        const raw = JSON.parse(await SOURCE.text(p));
+        const ds = parseDeepSeekSession(raw);
+        if (!ds.id) ds.id = p.slice(p.lastIndexOf('/') + 1).replace(/\.json$/i, '');
+        SESSIONS.push({
+          id: ds.id,
+          title: ds.title,
+          createdAt: ds.createdAt,
+          updatedAt: ds.updatedAt,
+          count: ds.messages.length,
+          pinned: ds.pinned,
+          ds,
+          selected: true,
+        });
+      } catch (err) {
+        log('解析失败：' + p + ' — ' + err.message, 'err');
+      }
+      done++;
+      // 每 3 个让出一次主线程，进度条在手机上也能动起来
+      if (done % 3 === 0 || done === total) {
+        showLoad(`正在解析会话 ${done}/${total}`, phaseProgress(done, total, 0.15, 0.98));
+        await tick();
+        if (done % 30 === 0) log(`已解析 ${done}/${total} …`, 'dim');
+      }
+    }
+    finishLoad('DeepSeek 官方导出');
+    return;
+  }
+
+  // 先排除「扩展/项目源码包」：这类包里往往有 README 里抄的示例对话，不能当数据
+  const hasManifest = typeof SOURCE.hasPath === 'function' && SOURCE.hasPath(/(^|\/)manifest\.json$/i);
+  const hasPackage = typeof SOURCE.hasPath === 'function' && SOURCE.hasPath(/(^|\/)package\.json$/i);
+  const hasExtJs =
+    typeof SOURCE.hasPath === 'function' &&
+    (SOURCE.hasPath(/(^|\/)background\/index\.js$/i) || SOURCE.hasPath(/(^|\/)content\/extractor\.js$/i));
+  const looksLikeExtension = hasExtJs || (hasManifest && hasPackage);
+
+  // 不是官方导出包：看看是不是扩展导出的 Markdown
+  const mdPaths = typeof SOURCE.listMarkdown === 'function' ? SOURCE.listMarkdown() : [];
+  if (mdPaths.length && !looksLikeExtension) {
+    log(`没找到官方导出结构，尝试按 Markdown 会话解析（${mdPaths.length} 个 .md）`, 'warn');
+    showLoad('正在解析 Markdown…', 0.1, `共 ${mdPaths.length} 个文件`);
+    await tick();
+    for (let i = 0; i < mdPaths.length; i++) {
+      const p = mdPaths[i];
+      const name = p.slice(p.lastIndexOf('/') + 1);
+      try {
+        const text = await SOURCE.text(p);
+        if (!looksLikeExporterMarkdown(text)) {
+          log(`跳过（不是对话记录）：${name}`, 'dim');
+          continue;
+        }
+        const ds = parseMarkdownConversation(text, { fileName: name });
+        if (!ds.messages.length) {
+          log(`跳过（没有消息）：${name}`, 'dim');
+          continue;
+        }
+        SESSIONS.push({
+          id: ds.id,
+          title: ds.title,
+          createdAt: ds.createdAt,
+          updatedAt: ds.updatedAt,
+          count: ds.messages.length,
+          pinned: false,
+          ds,
+          selected: true,
+        });
+        log(`  ✓ ${name} → ${ds.messages.length} 条消息`, 'dim');
+      } catch (err) {
+        log('解析失败：' + name + ' — ' + err.message, 'err');
+      }
+      showLoad(`正在解析 ${i + 1}/${mdPaths.length}`, phaseProgress(i + 1, mdPaths.length, 0.1, 0.98));
+      await tick();
+    }
+    if (SESSIONS.length) {
+      finishLoad('DeepSeek-Exporter 扩展的 Markdown');
+      return;
+    }
+  }
+
+  diagnoseSource({ looksLikeExtension });
+}
+
+/** 扩展导出的 .md 必然以 `# AI 对话记录` 开头（README 里的示例在代码块中，不在开头） */
+function looksLikeExporterMarkdown(text) {
+  const head = String(text || '')
+    .replace(/^\uFEFF/, '')
+    .split(/\r?\n/)
+    .filter((l) => l.trim())
+    .slice(0, 3)
+    .join('\n');
+  return /^#\s*AI\s*对话记录\s*$/m.test(head);
+}
+
+/** 载入不了时，尽量告诉用户他拖进来的是什么 */
+function diagnoseSource(opts = {}) {
+  const isExtension =
+    opts.looksLikeExtension ||
+    (typeof SOURCE.hasPath === 'function' &&
+      (SOURCE.hasPath(/(^|\/)background\/index\.js$/i) || (SOURCE.hasPath(/manifest\.json$/i) && SOURCE.hasPath(/(^|\/)package\.json$/i))));
+
+  let msg;
+  if (isExtension) {
+    msg =
+      `这是浏览器扩展/项目源码包（检测到 manifest.json / background/ 等），里面没有聊天记录。` +
+      `插件本身只是导出工具，要用它导出的 .md 文件或官方数据包。`;
+    log('识别结果：浏览器扩展源码包，不是聊天数据', 'warn');
+    log('👉 正确做法一：在 chat.deepseek.com 点「设置 → 数据管理 → 导出数据」，下载 deepseek_data-*.zip 再拖进来', 'warn');
+    log('👉 正确做法二：用扩展把对话导出成 .md，再把 .md 拖进来（本工具现已支持）', 'warn');
+  } else if (!SOURCE.count) {
+    msg = '这个数据源是空的。';
+    log('数据源为空', 'err');
+  } else {
+    msg =
+      `没有识别到 chat_session_index.json / chat_sessions/（官方导出）或对话 Markdown。` +
+      `当前是 ${SOURCE.count} 个文件：${(SOURCE.paths || []).slice(0, 6).join('、')}`;
+    log('识别失败：结构不符合任何已知格式', 'err');
+    log('官方导出：chat.deepseek.com → 设置 → 数据管理 → 导出数据 → 得到 deepseek_data-*.zip', 'warn');
+  }
+  $('sourceStat').innerHTML = `<span style="color:var(--warn)">${msg}</span>`;
+  hideLoad();
+  const bar = $('loadedBar');
+  if (bar && !SESSIONS.length) bar.hidden = true;
+}
+
+function finishLoad(formatName) {
+  SESSIONS.sort((a, b) => b.updatedAt - a.updatedAt);
+  const msgs = SESSIONS.reduce((a, s) => a + s.count, 0);
+
+  showLoad('载入完成', 1, '');
+  setTimeout(hideLoad, 400);
+
+  $('sourceStat').innerHTML =
+    `已载入 <b>${SOURCE.label}</b>（${formatName}）：${SESSIONS.length} 个会话 / ${msgs} 条消息（${SOURCE.kind === 'zip' ? SOURCE.count + ' 个 zip 条目' : SOURCE.count + ' 个文件'}）`;
+  log(`载入完成：${SESSIONS.length} 会话 / ${msgs} 消息`, 'ok');
+
+  const bar = $('loadedBar');
+  if (bar) {
+    bar.hidden = false;
+    $('loadedText').textContent = `已载入 ${SESSIONS.length} 个会话（${SOURCE.label}）· 不需重复添加`;
+  }
+  const confirm = $('confirmBar');
+  if (confirm) confirm.hidden = true;
+
+  renderList();
+  $('sessionsCard').style.display = '';
+  $('exportCard').style.display = '';
+  $('go').disabled = false;
+  $('cwdInput').value = guessCwd();
+  updateSelStat();
+}
+
+function guessCwd() {
+  return 'D:\\DeepSeek-Imported';
+}
+
+function renderList() {
+  const q = $('search').value.trim().toLowerCase();
+  const list = $('list');
+  list.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  for (const s of SESSIONS) {
+    if (q && !s.title.toLowerCase().includes(q)) continue;
+    const row = document.createElement('label');
+    row.className = 'item';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = s.selected;
+    cb.onchange = () => {
+      s.selected = cb.checked;
+      updateSelStat();
+    };
+    const t = document.createElement('div');
+    t.className = 't';
+    t.textContent = (s.pinned ? '📌 ' : '') + s.title;
+    t.title = s.title;
+    const m = document.createElement('div');
+    m.className = 'm';
+    m.textContent = `${s.count} 条 · ${new Date(s.updatedAt).toLocaleDateString()}`;
+    row.append(cb, t, m);
+    frag.appendChild(row);
+  }
+  list.appendChild(frag);
+  if (!list.children.length) {
+    const d = document.createElement('div');
+    d.className = 'item';
+    d.textContent = '没有匹配的会话';
+    list.appendChild(d);
+  }
+}
+
+function updateSelStat() {
+  const sel = SESSIONS.filter((s) => s.selected);
+  const msgs = sel.reduce((a, s) => a + s.count, 0);
+  $('selStat').textContent = `已选 ${sel.length}/${SESSIONS.length} 个会话 · ${msgs} 条消息`;
+}
+
+/* ---------------- 导出 ---------------- */
+
+const CHATBOX_VERSION = '1.16.0';
+
+function messagesForDsh(ds) {
+  return ds.messages.map((m) => ({
+    role: m.role,
+    text: m.text,
+    reasoning: m.thinking,
+    time: m.time,
+    files: m.files.map((f) => f.name),
+    search: m.search,
+  }));
+}
+
+function dshEncode(opts) {
+  const W = typeof DshWriter !== 'undefined' ? DshWriter : null;
+  let out = null;
+  if (W && typeof W.buildSessionLog === 'function') out = W.buildSessionLog(opts);
+  else if (W && typeof W.encodeSessionLog === 'function' && W.buildSessionEvents) {
+    out = W.encodeSessionLog(W.buildSessionEvents(opts));
+  } else if (typeof buildSessionLog === 'function') {
+    out = buildSessionLog(opts);
+  } else {
+    throw new Error('DSH 会话写入模块缺失');
+  }
+  if (out instanceof Uint8Array) return { bytes: out };
+  if (out && out.bytes instanceof Uint8Array) return out;
+  throw new Error('DSH 会话编码结果无效');
+}
+
+function setProgress(ratio, text) {
+  const p = $('prog');
+  if (p) {
+    p.hidden = false;
+    p.value = Math.max(0, Math.min(1, Number.isFinite(ratio) ? ratio : 0));
+  }
+  if (text) $('goStat').textContent = text;
+}
+
+async function exportChatbox(sel, opts = {}) {
+  const say = opts.quiet ? () => {} : log;
+  say(`正在转换 ${sel.length} 个会话为 Chatbox 备份…`);
+  const includeImages = opts.includeImages !== undefined ? opts.includeImages : $('wantImages').checked;
+  const built = [];
+  for (let i = 0; i < sel.length; i++) {
+    const s = sel[i];
+    built.push(await buildChatboxSession(s.ds, { readFile: (p) => SOURCE.bytes(p), includeImages }));
+    // 每 5 个会话让出一次主线程：手机端才不会「卡住没反应」
+    if (i % 5 === 4 || i === sel.length - 1) {
+      setProgress(((i + 1) / sel.length) * 0.7, `转换中 ${i + 1}/${sel.length}`);
+      await tick();
+    }
+    if ((i + 1) % 20 === 0) say(`  转换 ${i + 1}/${sel.length}`, 'dim');
+  }
+  const imgCount = built.reduce((a, b) => a + b.resources.length, 0);
+  say(`转换完成：${built.length} 会话，${imgCount} 张图片`, 'ok');
+  say('生成备份归档…', 'dim');
+  setProgress(0.8, '打包中…');
+  await tick();
+  const { entries, manifest } = await buildChatboxArchive(built, {
+    appVersion: CHATBOX_VERSION,
+    platform: detectPlatform(),
+  });
+  const bytes = await writeZip(entries);
+  setProgress(0.95, '保存中…');
+  if (opts.download !== false) await saveFile(bytes, `chatbox-backup-deepseek-${stamp()}.cbx`, 'application/zip');
+  say(`已生成 .cbx：${fmtBytes(bytes.length)}`, 'ok');
+  if (MOBILE() && bytes.length > 40 * 1024 * 1024) {
+    say('手机端提示：文件较大，若保存失败可取消勾选「包含图片附件」后重试', 'warn');
+  }
+  return { bytes, manifest, entries: entries.length, images: imgCount };
+}
+
+const INSTALL_PS1 = `param([string]$Dest = (Join-Path $env:USERPROFILE ".dsh\\sessions"))
+$src = Join-Path $PSScriptRoot "sessions"
+if (-not (Test-Path $src)) { Write-Error "找不到 sessions 目录（请保持 zip 解压后的目录结构）"; exit 1 }
+New-Item -ItemType Directory -Force -Path $Dest | Out-Null
+Copy-Item -Recurse -Force -Path (Join-Path $src "*") -Destination $Dest
+Write-Host ""
+Write-Host "已写入：" $Dest -ForegroundColor Green
+Get-ChildItem $src -Directory | ForEach-Object { Write-Host ("  + " + $_.Name) }
+Write-Host ""
+Write-Host "请完全退出并重新打开 DeepSeek Harness，会话会出现在对应工作区的侧栏中。" -ForegroundColor Cyan
+`;
+
+// POSIX：macOS / Linux / Android Termux / iOS iSH·a-Shell
+const INSTALL_SH = `#!/bin/sh
+# DeepSeek Harness 会话包安装脚本
+#   sh install.sh              -> 装到 ~/.dsh/sessions
+#   sh install.sh /目标/路径    -> 装到指定会话根目录（例如 App 沙盒里的路径）
+set -e
+DEST="\${1:-$HOME/.dsh/sessions}"
+HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+SRC="$HERE/sessions"
+if [ ! -d "$SRC" ]; then
+  echo "找不到 sessions/ 目录：请保持解压后的目录结构（install.sh 与 sessions/ 同级）" >&2
+  exit 1
+fi
+mkdir -p "$DEST"
+cp -R "$SRC"/. "$DEST"/
+echo ""
+echo "已写入：$DEST"
+for d in "$SRC"/*; do
+  [ -d "$d" ] && echo "  + $(basename "$d")"
+done
+echo ""
+echo "如果 DeepSeek Harness 正在运行，请完全退出后重新打开；会话会出现在对应工作区的侧栏中。"
+`;
+
+function installReadme(cwd, count) {
+  return `DeepSeek Harness 会话包
+========================
+
+包里是什么
+  sessions/--<工作区目录名>--/session-<uuid>/session.v4.jsonl.zstd
+  这些会话会出现在 cwd 对应的工作区里。
+
+一、DSH 跑在电脑上（Windows / macOS / Linux）—— 最常见
+  Windows：右键 install.ps1 →「使用 PowerShell 运行」
+  其它：  sh install.sh
+  然后完全退出并重开 DeepSeek Harness。
+
+二、DSH 跑在手机本机
+  Android（Termux）：
+    pkg install unzip
+    cd ~/Download
+    unzip dsh-sessions-deepseek-*.zip -d dsh-import
+    cd dsh-import && sh install.sh
+  iPhone / iPad（iSH 或 a-Shell）：
+    同样解压后执行 sh install.sh
+  若你的会话目录不在 ~/.dsh/sessions（例如在某个 App 的沙盒目录里），
+  把路径传进去：sh install.sh /该路径/.dsh/sessions
+
+三、手机上用插件远程访问电脑里的 DSH（如 dsh-mobile）
+  这类方案里会话仍然存在电脑上 —— 请把本包拿到电脑，按「一」安装即可。
+
+四、装完没看到会话？
+  · 确认完全退出了 DeepSeek Harness（不是最小化）再重开
+  · 确认工作区路径是：${cwd}
+  · 会话文件必须叫 session.v4.jsonl.zstd，且与 uuid 目录同级
+
+工作区：${cwd}
+会话数：${count}
+`;
+}
+
+async function exportChatboxV1(sel, opts = {}) {
+  log(`正在转换 ${sel.length} 个会话为 Chatbox V1 JSON…`);
+  const built = [];
+  for (const s of sel) {
+    built.push(await buildChatboxSession(s.ds, { includeImages: false }));
+  }
+  const json = buildChatboxV1File(built, { exportedAt: new Date() });
+  const bytes = utf8Encode(json);
+  if (opts.download !== false) await saveFile(bytes, `chatbox-backup-deepseek-${stamp()}-v1.json`, 'application/json');
+  log(`已生成 V1 JSON：${fmtBytes(bytes.length)}（${built.length} 个会话）`, 'ok');
+  return { bytes, count: built.length };
+}
+
+async function exportDsh(sel, opts = {}) {
+  const say = opts.quiet ? () => {} : log;
+  const cwd = opts.cwd || ($('cwdInput').value || '').trim() || guessCwd();
+  const key = workspaceKey(cwd);
+  say(`DSH 工作区：${cwd}`);
+  say(`目录键：${key}`, 'dim');
+  const files = [];
+  for (let i = 0; i < sel.length; i++) {
+    const s = sel[i];
+    const uuid = (crypto.randomUUID ? crypto.randomUUID() : stableId(s.id + Math.random())).toLowerCase();
+    const sessionId = 'session-' + uuid;
+    const data = dshEncode({
+      id: sessionId,
+      cwd,
+      createdAt: s.createdAt,
+      title: s.title,
+      messages: messagesForDsh(s.ds),
+    });
+    // 统一放进 sessions/ 目录：安装脚本按「sessions/ 与脚本同级」复制
+    const rel = (data.relativePath || `${key}/${sessionId}/session.v4.jsonl.zstd`).replace(/^sessions\//, '');
+    files.push({ path: `sessions/${rel}`, data: data.bytes, deflate: false });
+    if (i % 5 === 4 || i === sel.length - 1) {
+      setProgress(((i + 1) / sel.length) * 0.8, `编码中 ${i + 1}/${sel.length}`);
+      await tick();
+    }
+    if ((i + 1) % 20 === 0) say(`  编码 ${i + 1}/${sel.length}`, 'dim');
+  }
+  // install.ps1 必须带 UTF-8 BOM：Windows PowerShell 5.1 会把无 BOM 的中文当 ANSI 解析而报语法错
+  files.push({ path: 'install.ps1', data: utf8Encode('\uFEFF' + INSTALL_PS1), deflate: true });
+  files.push({ path: 'install.sh', data: utf8Encode(INSTALL_SH), deflate: true });
+  files.push({
+    path: '安装说明.txt',
+    data: utf8Encode(installReadme(cwd, sel.length)),
+    deflate: true,
+  });
+  const bytes = await writeZip(files);
+  if (opts.download !== false) await saveFile(bytes, `dsh-sessions-deepseek-${stamp()}.zip`, 'application/zip');
+  say(`已生成 DSH 会话包：${fmtBytes(bytes.length)}（${sel.length} 个会话，含 install.ps1 / install.sh）`, 'ok');
+  if (isTouchLikeDevice()) {
+    say('手机端：可把包分享到电脑后用 install.ps1 安装；若 DSH 跑在手机（Termux / iSH），用 sh install.sh', 'dim');
+  }
+  return { bytes, pathPrefix: `sessions/${key}/`, count: sel.length };
+}
+
+async function exportMarkdown(sel) {
+  const files = [];
+  for (const s of sel) {
+    const md = toMarkdown(s.ds);
+    const safe = s.title.replace(/[\\/:*?"<>|]/g, '_').slice(0, 80) || s.id;
+    files.push({ path: `${safe}.md`, data: utf8Encode(md), deflate: true });
+  }
+  const bytes = await writeZip(files);
+  await saveFile(bytes, `deepseek-markdown-${stamp()}.zip`, 'application/zip');
+  log(`已生成 Markdown 归档：${sel.length} 个文件`, 'ok');
+}
+
+async function exportJson(sel) {
+  const out = sel.map((s) => ({
+    id: s.id,
+    title: s.title,
+    createdAt: s.createdAt,
+    updatedAt: s.updatedAt,
+    messages: s.ds.messages.map((m) => ({
+      role: m.role,
+      content: m.text,
+      reasoning: m.thinking || undefined,
+      time: m.time,
+      files: m.files.map((f) => ({ name: f.name, path: f.path, isImage: f.isImage })),
+      search: m.search.length ? m.search : undefined,
+    })),
+  }));
+  const bytes = utf8Encode(JSON.stringify(out, null, 2));
+  await saveFile(bytes, `deepseek-chats-${stamp()}.json`, 'application/json');
+  log(`已生成 JSON：${fmtBytes(bytes.length)}`, 'ok');
+}
+
+/* ---------------- 事件绑定 ---------------- */
+
+let busy = false;
+
+async function withBusy(fn) {
+  if (busy) return;
+  busy = true;
+  const btn = $('go');
+  btn.disabled = true;
+  $('prog').hidden = false;
+  $('prog').value = 0;
+  $('drop').classList.add('busy'); // 解析期间不再响应拖拽/点击，避免重复添加
+  try {
+    await fn();
+  } catch (err) {
+    console.error(err);
+    log('出错：' + (err?.message || err), 'err');
+  } finally {
+    busy = false;
+    btn.disabled = false;
+    $('prog').hidden = true;
+    $('goStat').textContent = '';
+    $('drop').classList.remove('busy');
+  }
+}
+
+/* ---- 防重复添加：已有数据时先确认 ---- */
+
+let pendingSource = null;
+let allowReplace = false;
+
+async function doLoadSource(source) {
+  SOURCE = source;
+  const kindText = source.kind === 'zip' ? 'zip' : '文件夹';
+  log(`数据源：${source.label}（${kindText}，${source.count} 项）`, 'ok');
+  showLoad('正在读取数据…', 0.05, `${source.label} · ${source.count} ${source.kind === 'zip' ? '个条目' : '个文件'}`);
+
+  // 读取索引/建立数据源很轻，给一帧让进度条先画出来
+  await tick();
+  await loadSessions();
+}
+
+async function handleSource(source) {
+  if (SESSIONS.length && !allowReplace) {
+    pendingSource = source;
+    const bar = $('confirmBar');
+    if (bar) {
+      bar.hidden = false;
+      $('confirmText').textContent =
+        `已经载入过 ${SESSIONS.length} 个会话（${SOURCE ? SOURCE.label : '上一次选择的数据'}），不需要重复添加。` +
+        `如果确实要换成「${source.label}」，点下面的按钮。`;
+    }
+    log('检测到重复添加，已暂停：请点「替换现有数据」或「取消」', 'warn');
+    hideLoad();
+    return;
+  }
+  allowReplace = false;
+  const bar = $('confirmBar');
+  if (bar) bar.hidden = true;
+  await doLoadSource(source);
+}
+
+$('confirmReplace').addEventListener('click', async () => {
+  const src = pendingSource;
+  pendingSource = null;
+  $('confirmBar').hidden = true;
+  if (!src) return;
+  allowReplace = true;
+  await withBusy(async () => {
+    await doLoadSource(src);
+  });
+  allowReplace = false;
+});
+$('confirmCancel').addEventListener('click', () => {
+  pendingSource = null;
+  $('confirmBar').hidden = true;
+  log('已取消，保留当前已载入的数据', 'dim');
+});
+$('reloadBtn').addEventListener('click', () => {
+  allowReplace = true;
+  $('confirmBar').hidden = true;
+  $('fileInput').click();
+});
+
+$('drop').addEventListener('click', () => {
+  if (busy) return;
+  $('fileInput').click();
+});
+$('pickZip').addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (busy) return;
+  $('fileInput').click();
+});
+$('pickDir').addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (busy) return;
+  $('dirInput').click();
+});
+$('fileInput').addEventListener('change', async (e) => {
+  const files = [...(e.target.files || [])];
+  e.target.value = '';
+  if (!files.length) {
+    allowReplace = false;
+    return;
+  }
+  await withBusy(async () => {
+    if (files.length === 1 && /\.zip$/i.test(files[0].name)) {
+      await handleSource(await sourceFromZip(files[0]));
+    } else {
+      log(`读入 ${files.length} 个文件`, 'dim');
+      await handleSource(sourceFromFiles(files));
+    }
+  });
+  allowReplace = false;
+});
+$('dirInput').addEventListener('change', async (e) => {
+  const files = [...(e.target.files || [])];
+  e.target.value = '';
+  if (!files.length) {
+    allowReplace = false;
+    return;
+  }
+  await withBusy(async () => handleSource(sourceFromFiles(files)));
+  allowReplace = false;
+});
+
+const drop = $('drop');
+['dragenter', 'dragover'].forEach((t) =>
+  drop.addEventListener(t, (e) => {
+    e.preventDefault();
+    drop.classList.add('hot');
+  })
+);
+['dragleave', 'drop'].forEach((t) =>
+  drop.addEventListener(t, (e) => {
+    e.preventDefault();
+    drop.classList.remove('hot');
+  })
+);
+drop.addEventListener('drop', async (e) => {
+  const dt = e.dataTransfer;
+  if (!dt) return;
+  const items = [...(dt.items || [])];
+  const entry = items.map((i) => (i.webkitGetAsEntry ? i.webkitGetAsEntry() : null)).find(Boolean);
+  await withBusy(async () => {
+    if (entry && entry.isDirectory) {
+      const files = [];
+      await walkEntry(entry, files);
+      log(`从文件夹读入 ${files.length} 个文件`, 'dim');
+      await handleSource(sourceFromFiles(files));
+      return;
+    }
+    const dropped = [...(dt.files || [])];
+    if (!dropped.length) {
+      log('没有识别到文件', 'warn');
+      return;
+    }
+    const zip = dropped.find((f) => /\.zip$/i.test(f.name));
+    if (zip && dropped.length === 1) {
+      await handleSource(await sourceFromZip(zip));
+      return;
+    }
+    // 多个文件 / 非 zip：按「文件夹内容」处理（支持扩展导出的 .md）
+    log(`读入 ${dropped.length} 个文件`, 'dim');
+    await handleSource(sourceFromFiles(dropped));
+  });
+});
+
+function walkEntry(entry, out) {
+  return new Promise((resolve) => {
+    if (!entry) return resolve();
+    if (entry.isFile) {
+      entry.file(
+        (f) => {
+          try {
+            Object.defineProperty(f, 'webkitRelativePath', { value: entry.fullPath.replace(/^\//, '') });
+          } catch {}
+          out.push(f);
+          resolve();
+        },
+        () => resolve()
+      );
+      return;
+    }
+    const reader = entry.createReader();
+    const all = [];
+    const readBatch = () => {
+      reader.readEntries(
+        async (batch) => {
+          if (!batch.length) {
+            for (const e of all) await walkEntry(e, out);
+            resolve();
+            return;
+          }
+          all.push(...batch);
+          readBatch();
+        },
+        () => resolve()
+      );
+    };
+    readBatch();
+  });
+}
+
+$('search').addEventListener('input', renderList);
+$('selAll').addEventListener('click', () => {
+  SESSIONS.forEach((s) => (s.selected = true));
+  renderList();
+  updateSelStat();
+});
+$('selNone').addEventListener('click', () => {
+  SESSIONS.forEach((s) => (s.selected = false));
+  renderList();
+  updateSelStat();
+});
+
+document.querySelectorAll('.target').forEach((el) => {
+  el.addEventListener('click', () => {
+    document.querySelectorAll('.target').forEach((x) => x.classList.remove('sel'));
+    el.classList.add('sel');
+    el.querySelector('input').checked = true;
+    $('dshOpts').hidden = el.dataset.target !== 'dsh';
+  });
+});
+
+$('go').addEventListener('click', async () => {
+  const sel = SESSIONS.filter((s) => s.selected);
+  if (!sel.length) {
+    log('没有选中任何会话', 'warn');
+    return;
+  }
+  const target = document.querySelector('input[name=target]:checked')?.value || 'chatbox';
+  $('goStat').textContent = '';
+  await withBusy(async () => {
+    if (target === 'chatbox') await exportChatbox(sel);
+    else if (target === 'chatboxV1') await exportChatboxV1(sel);
+    else if (target === 'dsh') await exportDsh(sel);
+    else if (target === 'markdown') await exportMarkdown(sel);
+    else await exportJson(sel);
+  });
+  $('goStat').textContent = '';
+  setTimeout(() => {
+    $('prog').hidden = true;
+  }, 800);
+});
+
+/* ---------------- 设备档位：手机 / 平板 / 电脑 ---------------- */
+
+const SOURCE_HINT_DESKTOP =
+  '支持直接拖入 <code>deepseek_data-*.zip</code>（官方导出），或解压后的整个文件夹（里面有 <code>chat_session_index.json</code> 和 <code>chat_sessions/</code>）；也支持 DeepSeek-Exporter 等扩展导出的 <code>.md</code> 对话记录（可多选/整个文件夹）。';
+const SOURCE_HINT_TOUCH =
+  '在 DeepSeek 网页端点「设置 → 数据管理 → 导出数据」，把下载到的 <code>deepseek_data-*.zip</code> 选进来；也可以选扩展导出的 <code>.md</code>（可多选）。';
+
+let userTouchedImages = false;
+let userTouchedTarget = false;
+let firstApply = true;
+
+function syncTargetUi(name) {
+  document.querySelectorAll('.target').forEach((x) => x.classList.toggle('sel', x.dataset.target === name));
+  const radio = document.querySelector(`input[name=target][value="${name}"]`);
+  if (radio) radio.checked = true;
+  $('dshOpts').hidden = name !== 'dsh';
+}
+
+/** 按设备档位切换布局相关的 DOM 状态（CSS 部分由 data-device 驱动） */
+function applyDevice(device) {
+  DEVICE = device;
+  if (DEVINFO) DEVINFO.current = device;
+  document.documentElement.setAttribute('data-device', device);
+  const touchLike = device !== 'desktop';
+
+  const note = $('mobileNote');
+  if (note) note.hidden = !touchLike;
+  const noteTitle = $('noteTitle');
+  if (noteTitle) noteTitle.textContent = device === 'tablet' ? '平板端' : device === 'phone' ? '手机端' : '触屏设备';
+
+  const big = $('dropBig');
+  if (big) big.textContent = touchLike ? '点这里选择 .zip / .md 文件' : '把 zip / 文件夹 / .md 拖到这里';
+  const sub = $('dropSub');
+  if (sub) {
+    sub.innerHTML = touchLike
+      ? '<span style="color:var(--accent2)">点按选择</span>　支持官方导出 zip 与对话 .md'
+      : '或者 <span style="color:var(--accent2)">点击选择文件</span>　·　也可以选文件夹';
+  }
+
+  // 触屏上没有拖拽、也没有文件夹选择，隐藏这些入口
+  const pk = $('pickZip');
+  if (pk) pk.style.display = touchLike ? 'none' : '';
+  const pd = $('pickDir');
+  if (pd) pd.style.display = touchLike ? 'none' : '';
+
+  const sourceHint = document.querySelector('section.card .hint');
+  if (sourceHint) sourceHint.innerHTML = touchLike ? SOURCE_HINT_TOUCH : SOURCE_HINT_DESKTOP;
+
+  const dshTip = document.querySelector('.target[data-target=dsh] .td');
+  if (dshTip) {
+    dshTip.textContent = touchLike
+      ? '手机本机跑 DSH（Termux / iSH）用包里的 install.sh；DSH 在电脑上就用 install.ps1。'
+      : '解压到 %USERPROFILE%\\.dsh\\sessions\\ 覆盖同名目录即可；包内附 install.ps1 与 install.sh。';
+  }
+
+  // 默认值只在用户没手动改过时套用
+  const wi = $('wantImages');
+  if (wi && !userTouchedImages) wi.checked = device === 'desktop';
+  if (!userTouchedTarget && touchLike) syncTargetUi('chatbox');
+
+  log(
+    `界面按「${deviceLabel(device)}」布局（${window.innerWidth}×${window.innerHeight}）` +
+      (touchLike ? '：默认关闭图片附件、默认 Chatbox 目标' : ''),
+    'dim'
+  );
+}
+
+function refreshDevice(reason) {
+  const next = deviceDetect();
+  if (next === DEVICE && !firstApply) return;
+  const changed = next !== DEVICE;
+  applyDevice(next);
+  if (changed && reason) log(`检测到${reason}，已切换到「${deviceLabel(next)}」布局`, 'dim');
+  firstApply = false;
+}
+
+// 用户动过的选项不再被自动覆盖
+$('wantImages').addEventListener('change', () => {
+  userTouchedImages = true;
+});
+document.querySelectorAll('.target').forEach((el) => {
+  el.addEventListener('click', () => {
+    userTouchedTarget = true;
+  });
+});
+
+logEl.textContent = '';
+log('就绪。把一个 deepseek_data-*.zip 拖进上面的区域开始。', 'dim');
+refreshDevice();
+let resizeTimer = null;
+const scheduleRefresh = (reason) => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => refreshDevice(reason), 160);
+};
+window.addEventListener('resize', () => scheduleRefresh('窗口尺寸变化'), { passive: true });
+window.addEventListener('orientationchange', () => scheduleRefresh('屏幕旋转'), { passive: true });
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', () => scheduleRefresh('可视区域变化'), { passive: true });
+}
+try {
+  const mqList = [matchMedia('(pointer: coarse)'), matchMedia('(hover: none)'), matchMedia('(max-width: 600px)')];
+  for (const mq of mqList) {
+    if (mq.addEventListener) mq.addEventListener('change', () => scheduleRefresh('输入方式变化'));
+  }
+} catch {}
+
+/* 供自动化测试/调试使用（不影响正常使用） */
+globalThis.__DS2CB__ = {
+  sourceFromZip,
+  sourceFromFiles,
+  loadSessions,
+  handleSource,
+  getSessions: () => SESSIONS,
+  getSource: () => SOURCE,
+  getDevice: () => DEVICE,
+  isBusy: () => busy,
+  exportChatbox,
+  exportDsh,
+  exportChatboxV1: (sel, opts = {}) => exportChatboxV1(sel, opts),
+  workspaceKey,
+  log,
+};
+
+</script>
+</body>
+</html>

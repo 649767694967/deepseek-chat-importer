@@ -141,3 +141,14 @@ node test/zipkit.test.mjs   # zip 模块自测
 ## License
 
 [MIT](LICENSE)
+## DeepSeek Harness 新版（v4）兼容
+
+DSH 新版要求会话日志开头有一条**受保护的 system/message 头**（`surfaceOp: "append"`、`source.kind: "system-prompt"`）。本工具导出的会话已按该规则写入，导入后继续对话不会再报：
+
+```
+SessionFormatError: system/message requires a protected first surface head
+```
+
+- 导出的 zip 里带 **`一键安装（Windows）.bat`**（双击即可，不需要 PowerShell / sh）
+- 之前导入过、现在打不开的旧会话：双击包里的 **`修复旧会话（Windows）.bat`**，会自动找到 DeepSeek Harness 就地补头（原文件留 `.bak` 备份）
+- 新版 DSH 还自带官方导入：设置 → 插件 → 更多 → 打开「DeepSeek chat import」，之后「新建会话」右侧会出现上传按钮，可直接导 `deepseek_data-*.zip`

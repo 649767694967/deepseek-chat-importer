@@ -90,6 +90,19 @@ function buildTarget(target) {
     console.log(`  inlined: ${mod.file} (${code.length} bytes${mod.wrap ? ', wrapped as ' + mod.wrap : ''})${replaced ? '' : ' [未被模板引用]'}`);
   }
 
+  if (target.name === 'import-tool') {
+    // 注入 fix-v4.mjs（base64），避免反引号/反斜杠转义问题
+    const fixPath = [path.join(root, 'chat', 'fix-v4.mjs'), path.join(root, 'src', 'fix-v4.mjs')].find((p) => fs.existsSync(p));
+    if (fixPath) {
+      const b64 = fs.readFileSync(fixPath).toString('base64');
+      html = html.split('__FIX_V4_B64__').join(b64);
+      console.log(`  injected fix-v4.mjs (${b64.length} base64 chars)`);
+    } else {
+      console.log('  warning: 找不到 fix-v4.mjs');
+      html = html.split('__FIX_V4_B64__').join('');
+    }
+  }
+
   const out = path.join(root, process.env.OUT && target.name === 'import-tool' ? process.env.OUT : target.outName);
   fs.writeFileSync(out, html, 'utf8');
   console.log(`→ ${target.name}: ${out} (${html.length} bytes)`);

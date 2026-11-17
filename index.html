@@ -3627,6 +3627,9 @@ async function exportChatbox(sel, opts = {}) {
   return { bytes, manifest, entries: entries.length, images: imgCount };
 }
 
+// fix-v4.mjs 的 base64（构建时注入，避免反引号/反斜杠转义问题）
+const FIX_V4_B64 = 'LyoqCiAqIOS/ruWkjeaXp+eJiOWvvOWFpeeahCBEU0gg5Lya6K+d77ya6KGl5LiKIHY0IOimgeaxgueahOOAjOWPl+S/neaKpOeahOmmluS4qiBzdXJmYWNlIOWktOOAjeOAggogKgogKiDog4zmma/vvJpEU0gg5paw54mI5qCh6aqM6KaB5rGCCiAqICAgMSkg5Lya6K+d6YeM56ys5LiA5p2hIHN1cmZhY2Ug5LqL5Lu25b+F6aG75pivIHN5c3RlbS9tZXNzYWdl77yIc3VyZmFjZU9wOiAiYXBwZW5kIu+8iQogKiAgIDIpIOi/meadoSBtZXNzYWdlIOW/hemhu+W4piBzb3VyY2Uua2luZCA9PT0gInN5c3RlbS1wcm9tcHQiCiAqIOaXp+eJiOWvvOWHuue8uuWwkeWug++8jERTSCDkuIDml6blnKjov5nkuKrkvJror53ph4znu6fnu63lhpkgc3lzdGVtL21lc3NhZ2Ug5bCx5Lya5oqlCiAqICAgU2Vzc2lvbkZvcm1hdEVycm9yOiBzeXN0ZW0vbWVzc2FnZSByZXF1aXJlcyBhIHByb3RlY3RlZCBmaXJzdCBzdXJmYWNlIGhlYWQKICoKICog5L+u5aSN5Lya77yaCiAqICAgwrcg5Zyo56ys5LiA5LiqIHN0ZXAvc3RhcnQg5LmL5ZCO5o+S5YWlIHN5c3RlbS9tZXNzYWdlCiAqICAgwrcg6YeN5o6S5omA5pyJIHNlce+8jOW5tuWQjOatpeS/ruatoyBzZXNzaW9uL3RpdGxlIOeahCBtZXNzYWdlU2Vxc+OAgWNvbXBhY3Rpb24g55qEIHNoYWRvd2VkU2Vxc+OAgQogKiAgICAgc3VyZmFjZU9wIOeahCBzdGFydFNlcS9lbmRTZXEKICogICDCtyDljp/mlofku7blpIfku73kuLogKi5iYWstPOaXtumXtOaIsz4KICoKICog55So5rOV77yI55SxIOS/ruWkjeaXp+S8muivnS5iYXQg6LCD55So77yM5Lmf5Y+v5omL5Yqo77yJ77yaCiAqICAgRUxFQ1RST05fUlVOX0FTX05PREU9MSAiPERTSC5leGU+IiBmaXgtdjQubWpzIFvkvJror53moLnnm67lvZVdCiAqLwppbXBvcnQgZnMgZnJvbSAnbm9kZTpmcyc7CmltcG9ydCBwYXRoIGZyb20gJ25vZGU6cGF0aCc7CmltcG9ydCBvcyBmcm9tICdub2RlOm9zJzsKaW1wb3J0IHpsaWIgZnJvbSAnbm9kZTp6bGliJzsKCmNvbnN0IFNVUkZBQ0UgPSBuZXcgU2V0KFsnc3lzdGVtL21lc3NhZ2UnLCAndXNlci9tZXNzYWdlJywgJ2RldmVsb3Blci9tZXNzYWdlJywgJ2Fzc2lzdGFudC9tZXNzYWdlJywgJ3Rvb2wvcmVzdWx0J10pOwpjb25zdCBIRUFEX1RFWFQgPSAn6L+Z5q615a+56K+d55SxIERlZXBTZWVrIOe9kemhteerr+WvvOWHuuWQjuWvvOWFpe+8jOWOhuWPsuWGheWuueS/neaMgeWOn+agt++8m+ivt+aOpeedgOW+gOS4i+iBiuOAgic7CmNvbnN0IFJPT1QgPSBwcm9jZXNzLmFyZ3ZbMl0gfHwgcGF0aC5qb2luKG9zLmhvbWVkaXIoKSwgJy5kc2gnLCAnc2Vzc2lvbnMnKTsKCmNvbnN0IGxvZyA9IChzKSA9PiBwcm9jZXNzLnN0ZG91dC53cml0ZShzICsgJ1xuJyk7CmNvbnN0IG5leHRJZCA9ICgpID0+ICdtLScgKyBEYXRlLm5vdygpLnRvU3RyaW5nKDM2KSArICctJyArIE1hdGgucmFuZG9tKCkudG9TdHJpbmcoMzYpLnNsaWNlKDIsIDcpOwoKLyoqIOWkmiBmcmFtZSB6c3RkIOmAkOW4p+ino+WOiyAqLwpmdW5jdGlvbiBkZWNvZGVGcmFtZXMoYnVmKSB7CiAgY29uc3QgbWFya3MgPSBbXTsKICBmb3IgKGxldCBpID0gMDsgaSA8IGJ1Zi5sZW5ndGggLSAzOyBpKyspIHsKICAgIGlmIChidWZbaV0gPT09IDB4MjggJiYgYnVmW2kgKyAxXSA9PT0gMHhiNSAmJiBidWZbaSArIDJdID09PSAweDJmICYmIGJ1ZltpICsgM10gPT09IDB4ZmQpIG1hcmtzLnB1c2goaSk7CiAgfQogIGNvbnN0IHBhcnRzID0gW107CiAgZm9yIChsZXQgayA9IDA7IGsgPCBtYXJrcy5sZW5ndGg7IGsrKykgewogICAgY29uc3QgcyA9IG1hcmtzW2tdOwogICAgY29uc3QgZSA9IGsgKyAxIDwgbWFya3MubGVuZ3RoID8gbWFya3NbayArIDFdIDogYnVmLmxlbmd0aDsKICAgIHRyeSB7CiAgICAgIHBhcnRzLnB1c2goemxpYi56c3RkRGVjb21wcmVzc1N5bmMoYnVmLnN1YmFycmF5KHMsIGUpKS50b1N0cmluZygndXRmOCcpKTsKICAgIH0gY2F0Y2ggewogICAgICAvKiDlnY/luKfot7Pov4cgKi8KICAgIH0KICB9CiAgcmV0dXJuIHBhcnRzLmpvaW4oJycpOwp9CgpmdW5jdGlvbiBlbmNvZGVSb3dzKGxpbmVzKSB7CiAgcmV0dXJuIEJ1ZmZlci5jb25jYXQobGluZXMubWFwKChsaW5lKSA9PiB6bGliLnpzdGRDb21wcmVzc1N5bmMoQnVmZmVyLmZyb20obGluZSArICdcbicsICd1dGY4JykpKSk7Cn0KCmZ1bmN0aW9uIGZpcnN0U3VyZmFjZShldmVudHMpIHsKICByZXR1cm4gZXZlbnRzLmZpbmQoKGUpID0+IFNVUkZBQ0UuaGFzKGUudHlwZSkpOwp9CgpmdW5jdGlvbiBpc0hlYWx0aHkoZXZlbnRzKSB7CiAgY29uc3QgZmlyc3QgPSBmaXJzdFN1cmZhY2UoZXZlbnRzKTsKICByZXR1cm4gQm9vbGVhbigKICAgIGZpcnN0ICYmCiAgICAgIGZpcnN0LnR5cGUgPT09ICdzeXN0ZW0vbWVzc2FnZScgJiYKICAgICAgZmlyc3Quc3VyZmFjZU9wID09PSAnYXBwZW5kJyAmJgogICAgICBmaXJzdC5kYXRhICYmCiAgICAgIGZpcnN0LmRhdGEubWVzc2FnZSAmJgogICAgICBmaXJzdC5kYXRhLm1lc3NhZ2Uuc291cmNlICYmCiAgICAgIGZpcnN0LmRhdGEubWVzc2FnZS5zb3VyY2Uua2luZCA9PT0gJ3N5c3RlbS1wcm9tcHQnCiAgKTsKfQoKLyoqIOaKiuS6i+S7tumHjOW8leeUqOeahCBzZXEg5oyJ5pig5bCE5pS55YaZICovCmZ1bmN0aW9uIHJlbWFwUmVmcyhldiwgbWFwKSB7CiAgY29uc3QgZml4ID0gKG4pID0+ICh0eXBlb2YgbiA9PT0gJ251bWJlcicgJiYgbWFwLmhhcyhuKSA/IG1hcC5nZXQobikgOiBuKTsKICBpZiAoZXYudHlwZSA9PT0gJ3Nlc3Npb24vdGl0bGUnICYmIGV2LmRhdGEgJiYgQXJyYXkuaXNBcnJheShldi5kYXRhLm1lc3NhZ2VTZXFzKSkgewogICAgZXYuZGF0YS5tZXNzYWdlU2VxcyA9IGV2LmRhdGEubWVzc2FnZVNlcXMubWFwKGZpeCk7CiAgfQogIGlmIChldi50eXBlICYmIGV2LnR5cGUuc3RhcnRzV2l0aCgnY29tcGFjdGlvbi8nKSAmJiBldi5kYXRhICYmIEFycmF5LmlzQXJyYXkoZXYuZGF0YS5zaGFkb3dlZFNlcXMpKSB7CiAgICBldi5kYXRhLnNoYWRvd2VkU2VxcyA9IGV2LmRhdGEuc2hhZG93ZWRTZXFzLm1hcChmaXgpOwogIH0KICBpZiAoZXYuc3VyZmFjZU9wICYmIHR5cGVvZiBldi5zdXJmYWNlT3AgPT09ICdvYmplY3QnKSB7CiAgICBpZiAoJ3N0YXJ0U2VxJyBpbiBldi5zdXJmYWNlT3ApIGV2LnN1cmZhY2VPcC5zdGFydFNlcSA9IGZpeChldi5zdXJmYWNlT3Auc3RhcnRTZXEpOwogICAgaWYgKCdlbmRTZXEnIGluIGV2LnN1cmZhY2VPcCkgZXYuc3VyZmFjZU9wLmVuZFNlcSA9IGZpeChldi5zdXJmYWNlT3AuZW5kU2VxKTsKICB9CiAgcmV0dXJuIGV2Owp9CgovKiog5o+S5YWlIGhlYWTvvIzov5Tlm57mlrDkuovku7bmlbDnu4TvvIhzZXEg5LuOIDAg6YeN5o6S77yJICovCmZ1bmN0aW9uIHJlcGFpcihoZWFkZXIsIGV2ZW50cykgewogIGNvbnN0IG91dCA9IFtdOwogIGNvbnN0IG1hcCA9IG5ldyBNYXAoKTsgLy8g5penIHNlcSAtPiDmlrAgc2VxCiAgbGV0IGluc2VydGVkID0gZmFsc2U7CiAgbGV0IHR1cm4gPSAwOwogIGxldCBzdGVwID0gMTsKCiAgZm9yIChjb25zdCBldiBvZiBldmVudHMpIHsKICAgIGlmIChldi50eXBlID09PSAndHVybi9zdGFydCcpIHR1cm4gPSBldi5kYXRhPy50dXJuID8/IHR1cm47CiAgICBpZiAoZXYudHlwZSA9PT0gJ3N0ZXAvc3RhcnQnKSB7CiAgICAgIHN0ZXAgPSBldi5kYXRhPy5zdGVwID8/IDE7CiAgICAgIGlmICghaW5zZXJ0ZWQpIHsKICAgICAgICBtYXAuc2V0KGV2LnNlcSwgb3V0Lmxlbmd0aCk7CiAgICAgICAgb3V0LnB1c2goZXYpOwogICAgICAgIG1hcC5zZXQoLTEsIG91dC5sZW5ndGgpOyAvLyDmlrDkuovku7bljaDnmoTkvY3nva4KICAgICAgICBvdXQucHVzaCh7CiAgICAgICAgICB0eXBlOiAnc3lzdGVtL21lc3NhZ2UnLAogICAgICAgICAgdGltZTogZXYudGltZSwKICAgICAgICAgIGRhdGE6IHsKICAgICAgICAgICAgdHVybiwKICAgICAgICAgICAgc3RlcCwKICAgICAgICAgICAgbWVzc2FnZTogewogICAgICAgICAgICAgIHJvbGU6ICdzeXN0ZW0nLAogICAgICAgICAgICAgIGNvbnRlbnQ6IFt7IHR5cGU6ICd0ZXh0JywgdGV4dDogSEVBRF9URVhUIH1dLAogICAgICAgICAgICAgIHNvdXJjZTogeyBraW5kOiAnc3lzdGVtLXByb21wdCcgfSwKICAgICAgICAgICAgICBpZDogbmV4dElkKCksCiAgICAgICAgICAgIH0sCiAgICAgICAgICB9LAogICAgICAgICAgc3VyZmFjZU9wOiAnYXBwZW5kJywKICAgICAgICB9KTsKICAgICAgICBpbnNlcnRlZCA9IHRydWU7CiAgICAgICAgY29udGludWU7CiAgICAgIH0KICAgIH0KICAgIG1hcC5zZXQoZXYuc2VxLCBvdXQubGVuZ3RoKTsKICAgIG91dC5wdXNoKGV2KTsKICB9CgogIGlmICghaW5zZXJ0ZWQpIHsKICAgIC8vIOayoeaciSB0dXJuL3N0YXJ077ya55u05o6l5pS+5pyA5YmN6Z2iCiAgICBvdXQudW5zaGlmdCh7CiAgICAgIHR5cGU6ICdzeXN0ZW0vbWVzc2FnZScsCiAgICAgIHRpbWU6IGhlYWRlci5jcmVhdGVkQXQgfHwgRGF0ZS5ub3coKSwKICAgICAgZGF0YTogewogICAgICAgIHR1cm46IDEsCiAgICAgICAgc3RlcDogMSwKICAgICAgICBtZXNzYWdlOiB7CiAgICAgICAgICByb2xlOiAnc3lzdGVtJywKICAgICAgICAgIGNvbnRlbnQ6IFt7IHR5cGU6ICd0ZXh0JywgdGV4dDogSEVBRF9URVhUIH1dLAogICAgICAgICAgc291cmNlOiB7IGtpbmQ6ICdzeXN0ZW0tcHJvbXB0JyB9LAogICAgICAgICAgaWQ6IG5leHRJZCgpLAogICAgICAgIH0sCiAgICAgIH0sCiAgICAgIHN1cmZhY2VPcDogJ2FwcGVuZCcsCiAgICB9KTsKICAgIC8vIOmHjeaWsOeul+aYoOWwhAogICAgbWFwLmNsZWFyKCk7CiAgICBldmVudHMuZm9yRWFjaCgoZXYsIGkpID0+IG1hcC5zZXQoZXYuc2VxLCBpICsgMSkpOwogIH0KCiAgLy8g5YWI5oqK5byV55So5oyJ5penIHNlcSDmlLnlhpnmiJDmlrAgc2Vx77yM5YaN57uf5LiA6YeN5o6SIHNlce+8iOmhuuW6j+S4jeiDveWPje+8jOWQpuWImeS8muS6jOasoeaYoOWwhO+8iQogIGZvciAoY29uc3QgZXYgb2Ygb3V0KSByZW1hcFJlZnMoZXYsIG1hcCk7CiAgb3V0LmZvckVhY2goKGV2LCBpKSA9PiB7CiAgICBldi5zZXEgPSBpOwogIH0pOwogIHJldHVybiBvdXQ7Cn0KCmZ1bmN0aW9uIGZpbmRMb2dzKGRpciwgb3V0ID0gW10pIHsKICBsZXQgZW50cmllcyA9IFtdOwogIHRyeSB7CiAgICBlbnRyaWVzID0gZnMucmVhZGRpclN5bmMoZGlyLCB7IHdpdGhGaWxlVHlwZXM6IHRydWUgfSk7CiAgfSBjYXRjaCB7CiAgICByZXR1cm4gb3V0OwogIH0KICBmb3IgKGNvbnN0IGVudCBvZiBlbnRyaWVzKSB7CiAgICBjb25zdCBwID0gcGF0aC5qb2luKGRpciwgZW50Lm5hbWUpOwogICAgaWYgKGVudC5pc0RpcmVjdG9yeSgpKSBmaW5kTG9ncyhwLCBvdXQpOwogICAgZWxzZSBpZiAoZW50LmlzRmlsZSgpICYmIC9ec2Vzc2lvbihcLnZcZCspP1wuanNvbmxcLnpzdGQkLy50ZXN0KGVudC5uYW1lKSkgb3V0LnB1c2gocCk7CiAgfQogIHJldHVybiBvdXQ7Cn0KCmxvZygn5Lya6K+d5qC555uu5b2V77yaJyArIFJPT1QpOwppZiAoIWZzLmV4aXN0c1N5bmMoUk9PVCkpIHsKICBsb2coJ+ebruW9leS4jeWtmOWcqO+8jOayoeacieWPr+S/ruWkjeeahOS8muivneOAgicpOwogIHByb2Nlc3MuZXhpdCgwKTsKfQpjb25zdCBmaWxlcyA9IGZpbmRMb2dzKFJPT1QpOwpsb2coJ+WPkeeOsCAnICsgZmlsZXMubGVuZ3RoICsgJyDkuKrkvJror53ml6Xlv5cnKTsKCmxldCBmaXhlZCA9IDA7CmxldCBoZWFsdGh5ID0gMDsKbGV0IGZhaWxlZCA9IDA7Cgpmb3IgKGNvbnN0IGZpbGUgb2YgZmlsZXMpIHsKICB0cnkgewogICAgY29uc3QgYnVmID0gZnMucmVhZEZpbGVTeW5jKGZpbGUpOwogICAgY29uc3QgbGluZXMgPSBkZWNvZGVGcmFtZXMoYnVmKS5zcGxpdCgnXG4nKS5maWx0ZXIoKGwpID0+IGwudHJpbSgpKTsKICAgIGlmICghbGluZXMubGVuZ3RoKSBjb250aW51ZTsKICAgIGNvbnN0IGhlYWRlciA9IEpTT04ucGFyc2UobGluZXNbMF0pOwogICAgaWYgKGhlYWRlci50eXBlICE9PSAnc2Vzc2lvbicpIGNvbnRpbnVlOwogICAgY29uc3QgZXZlbnRzID0gbGluZXMuc2xpY2UoMSkubWFwKChsKSA9PiBKU09OLnBhcnNlKGwpKTsKICAgIGlmIChpc0hlYWx0aHkoZXZlbnRzKSkgewogICAgICBoZWFsdGh5Kys7CiAgICAgIGNvbnRpbnVlOwogICAgfQogICAgY29uc3QgcmVwYWlyZWQgPSByZXBhaXIoaGVhZGVyLCBldmVudHMpOwogICAgY29uc3QgYmFja3VwID0gZmlsZSArICcuYmFrLScgKyBEYXRlLm5vdygpOwogICAgZnMuY29weUZpbGVTeW5jKGZpbGUsIGJhY2t1cCk7CiAgICBmcy53cml0ZUZpbGVTeW5jKGZpbGUsIGVuY29kZVJvd3MoW0pTT04uc3RyaW5naWZ5KGhlYWRlciksIC4uLnJlcGFpcmVkLm1hcCgoZSkgPT4gSlNPTi5zdHJpbmdpZnkoZSkpXSkpOwogICAgZml4ZWQrKzsKICAgIGxvZygnICBb5bey5L+u5aSNXSAnICsgcGF0aC5yZWxhdGl2ZShST09ULCBmaWxlKSk7CiAgfSBjYXRjaCAoZXJyKSB7CiAgICBmYWlsZWQrKzsKICAgIGxvZygnICBb5aSx6LSlXSAnICsgcGF0aC5yZWxhdGl2ZShST09ULCBmaWxlKSArICcg4oaSICcgKyAoZXJyPy5tZXNzYWdlIHx8IGVycikpOwogIH0KfQoKbG9nKCcnKTsKbG9nKCflrozmiJDvvJrkv67lpI0gJyArIGZpeGVkICsgJyDkuKrvvIzmnKzmnaXlsLHmraPluLggJyArIGhlYWx0aHkgKyAnIOS4qu+8jOWksei0pSAnICsgZmFpbGVkICsgJyDkuKonKTsKaWYgKGZpeGVkKSBsb2coJ+ivt+WujOWFqOmAgOWHuuW5tumHjeaWsOaJk+W8gCBEZWVwU2VlayBIYXJuZXNz44CCJyk7Cg==';
+
 const INSTALL_PS1 = `param([string]$Dest = (Join-Path $env:USERPROFILE ".dsh\\sessions"))
 $src = Join-Path $PSScriptRoot "sessions"
 if (-not (Test-Path $src)) { Write-Error "找不到 sessions 目录（请保持 zip 解压后的目录结构）"; exit 1 }
@@ -3663,6 +3666,70 @@ echo ""
 echo "如果 DeepSeek Harness 正在运行，请完全退出后重新打开；会话会出现在对应工作区的侧栏中。"
 `;
 
+// ---------------------------------------------------------------------------
+// Windows 一键安装（双击即可）：给不会用 PowerShell / sh 的人
+// ---------------------------------------------------------------------------
+const INSTALL_BAT = `@echo off
+setlocal
+set "DEST=%USERPROFILE%\.dsh\sessions"
+set "SRC=%~dp0sessions"
+echo Installing DeepSeek Harness sessions...
+echo.
+if not exist "%SRC%" (
+  echo [ERROR] "sessions" folder not found.
+  echo Unzip the whole archive first, then double-click this file again.
+  echo.
+  pause
+  exit /b 1
+)
+if not exist "%DEST%" mkdir "%DEST%" 2>nul
+xcopy "%SRC%" "%DEST%" /E /I /Y /Q >nul
+if errorlevel 1 (
+  echo [ERROR] Copy failed. Try right-click - Run as administrator.
+  echo.
+  pause
+  exit /b 1
+)
+echo Done. Sessions written to:
+echo   %DEST%
+echo.
+echo Next: quit DeepSeek Harness completely ^(tray icon too^), then start it again.
+echo.
+pause
+`;
+
+const FIX_BAT = `@echo off
+setlocal
+echo Repair old imported sessions ^(add the v4 system/message head^)
+echo.
+set "EXE="
+if exist "%LOCALAPPDATA%\\Programs\\DeepSeek Harness\\DeepSeek Harness.exe" set "EXE=%LOCALAPPDATA%\\Programs\\DeepSeek Harness\\DeepSeek Harness.exe"
+if not defined EXE if exist "C:\\Program Files\\deepseej\\DeepSeek Harness.exe" set "EXE=C:\\Program Files\\deepseej\\DeepSeek Harness.exe"
+if not defined EXE if exist "D:\\Program Files\\deepseej\\DeepSeek Harness.exe" set "EXE=D:\\Program Files\\deepseej\\DeepSeek Harness.exe"
+if not defined EXE if exist "%ProgramFiles%\\deepseej\\DeepSeek Harness.exe" set "EXE=%ProgramFiles%\\deepseej\\DeepSeek Harness.exe"
+if not defined EXE if exist "%ProgramFiles(x86)%\\deepseej\\DeepSeek Harness.exe" set "EXE=%ProgramFiles(x86)%\\deepseej\\DeepSeek Harness.exe"
+if not defined EXE (
+  echo DeepSeek Harness.exe not found automatically.
+  set /p EXE=Paste its full path here and press Enter: 
+)
+if not exist "%EXE%" (
+  echo [ERROR] Invalid path: %EXE%
+  echo.
+  pause
+  exit /b 1
+)
+if not exist "%~dp0fix-v4.mjs" (
+  echo [ERROR] fix-v4.mjs is missing next to this file.
+  echo.
+  pause
+  exit /b 1
+)
+set "ELECTRON_RUN_AS_NODE=1"
+"%EXE%" "%~dp0fix-v4.mjs" %*
+set "ELECTRON_RUN_AS_NODE="
+echo.
+pause
+`;
 function installReadme(cwd, count) {
   return `DeepSeek Harness 会话包
 ========================
@@ -3671,10 +3738,13 @@ function installReadme(cwd, count) {
   sessions/--<工作区目录名>--/session-<uuid>/session.v4.jsonl.zstd
   这些会话会出现在 cwd 对应的工作区里。
 
-一、DSH 跑在电脑上（Windows / macOS / Linux）—— 最常见
-  Windows：右键 install.ps1 →「使用 PowerShell 运行」
-  其它：  sh install.sh
-  然后完全退出并重开 DeepSeek Harness。
+一、DSH 跑在电脑上（Windows）—— 最常见，双击就行
+  1) 把整个压缩包解压到一个文件夹（不要直接在压缩包里双击）
+  2) 双击「一键安装（Windows）.bat」
+  3) 看到「已写入」后，完全退出 DeepSeek Harness（托盘图标也要退），再重新打开
+
+  如果双击 bat 没反应或被拦：右键 install.ps1 →「使用 PowerShell 运行」
+  macOS / Linux：sh install.sh
 
 二、DSH 跑在手机本机
   Android（Termux）：
@@ -3690,7 +3760,15 @@ function installReadme(cwd, count) {
 三、手机上用插件远程访问电脑里的 DSH（如 dsh-mobile）
   这类方案里会话仍然存在电脑上 —— 请把本包拿到电脑，按「一」安装即可。
 
-四、装完没看到会话？
+四、旧版本导入过的会话报 "protected first surface head"？
+  这是 DSH 新版对 v4 的新要求（会话开头必须有受保护的 system/message 头）。
+  · 用本工具重新导出的包已经带上了，不会再报；
+  · 之前导入过、现在打不开的旧会话：双击「修复旧会话（Windows）.bat」，
+    它会自动找到 DeepSeek Harness 并就地补头（原文件留 .bak 备份）。
+  · 也可以直接用新版 DSH 自带的导入：设置 → 插件 → 更多 → 打开「DeepSeek chat import」，
+    「新建会话」右边会出现上传按钮，可直接导 deepseek_data-*.zip。
+
+五、装完没看到会话？
   · 确认完全退出了 DeepSeek Harness（不是最小化）再重开
   · 确认工作区路径是：${cwd}
   · 会话文件必须叫 session.v4.jsonl.zstd，且与 uuid 目录同级
@@ -3740,9 +3818,15 @@ async function exportDsh(sel, opts = {}) {
     }
     if ((i + 1) % 20 === 0) say(`  编码 ${i + 1}/${sel.length}`, 'dim');
   }
+  // Windows 双击就能装（bat 用 CRLF，避免 cmd 解析异常）
+  const bat = (text) => utf8Encode(text.replace(/\r?\n/g, '\r\n'));
+  files.push({ path: '一键安装（Windows）.bat', data: bat(INSTALL_BAT), deflate: true });
   // install.ps1 必须带 UTF-8 BOM：Windows PowerShell 5.1 会把无 BOM 的中文当 ANSI 解析而报语法错
   files.push({ path: 'install.ps1', data: utf8Encode('\uFEFF' + INSTALL_PS1), deflate: true });
   files.push({ path: 'install.sh', data: utf8Encode(INSTALL_SH), deflate: true });
+  // v4 修复工具：救回旧版导入后报 "protected first surface head" 的会话
+  files.push({ path: '修复旧会话（Windows）.bat', data: bat(FIX_BAT), deflate: true });
+  files.push({ path: 'fix-v4.mjs', data: base64ToBytes(FIX_V4_B64), deflate: true });
   files.push({
     path: '安装说明.txt',
     data: utf8Encode(installReadme(cwd, sel.length)),
@@ -3750,9 +3834,10 @@ async function exportDsh(sel, opts = {}) {
   });
   const bytes = await writeZip(files);
   if (opts.download !== false) await saveFile(bytes, `dsh-sessions-deepseek-${stamp()}.zip`, 'application/zip');
-  say(`已生成 DSH 会话包：${fmtBytes(bytes.length)}（${sel.length} 个会话，含 install.ps1 / install.sh）`, 'ok');
+  say(`已生成 DSH 会话包：${fmtBytes(bytes.length)}（${sel.length} 个会话）`, 'ok');
+  say('包里带「一键安装（Windows）.bat」，解压后双击即可；会话文件已按新版 v4 规则写入', 'dim');
   if (isTouchLikeDevice()) {
-    say('手机端：可把包分享到电脑后用 install.ps1 安装；若 DSH 跑在手机（Termux / iSH），用 sh install.sh', 'dim');
+    say('手机端：可把包分享到电脑后用 bat 安装；若 DSH 跑在手机（Termux / iSH），用 sh install.sh', 'dim');
   }
   return { bytes, pathPrefix: `sessions/${key}/`, count: sel.length };
 }
